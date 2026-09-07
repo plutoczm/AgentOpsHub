@@ -1,0 +1,30 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+# Python and developer tools
+.venv/
+.tools/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+# Local data and generated evidence
+.data/
+.artifacts/
+*.log
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

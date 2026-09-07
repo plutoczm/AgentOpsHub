@@ -1,0 +1,27 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: Ruff lint
+        entry: python scripts/dev.py lint
+        language: system
+        pass_filenames: false
+        types: [python]
+      - id: ruff-format
+        name: Ruff format check
+        entry: python scripts/dev.py format-check
+        language: system
+        pass_filenames: false
+        types: [python]
+      - id: mypy
+        name: Strict mypy
+        entry: python scripts/dev.py typecheck
+        language: system
+        pass_filenames: false
+        types: [python]
+      - id: staged-secrets
+        name: Reject staged secrets and local environment files
+        entry: python scripts/dev.py secrets
+        language: system
+        pass_filenames: false
+        always_run: true

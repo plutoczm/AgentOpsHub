@@ -1,0 +1,59 @@
+"""FastAPI application factory for the Phase 0 backend."""
+
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+
+from app import __version__
+from app.api.health import router
+from app.core.config import Settings, load_settings
+from app.core.middleware import RequestContextMiddleware
+from app.observability.logging import configure_logging
+
+logger = logging.getLogger(__name__)
+
+
+async def unhandled_exception(request: Request, exc: Exception) -> JSONResponse:
+    """Return a generic error and log type metadata without exception contents."""
+    request_id: str = request.state.request_id
+    logger.error(
+        "unhandled_exception",
+        extra={"request_id": request_id, "error_type": type(exc).__name__},
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error", "request_id": request_id},
+        headers={"X-Request-ID": request_id},
+    )
+
+
+def create_app(settings: Settings | None = None) -> FastAPI:
+    """Construct an isolated app; importing this module performs no I/O."""
+    resolved = settings if settings is not None else load_settings()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        configure_logging(resolved.log_level)
+        logger.info("application_started")
+        try:
+            yield
+        finally:
+            logger.info("application_stopped")
+
+    docs_enabled = resolved.environment != "production"
+    app = FastAPI(
+        title=resolved.app_name,
+        version=__version__,
+        lifespan=lifespan,
+        docs_url="/docs" if docs_enabled else None,
+        redoc_url=None,
+        openapi_url="/openapi.json" if docs_enabled else None,
+    )
+    app.state.settings = resolved
+    app.add_middleware(RequestContextMiddleware)
+    app.add_exception_handler(Exception, unhandled_exception)
+    app.include_router(router)
+    return app
