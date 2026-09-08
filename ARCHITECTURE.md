@@ -4,9 +4,9 @@ Enterprise AI Agent Platform — 企业技术支持 / IT Support 场景。
 
 ## 1. 状态与边界
 
-当前实现范围为 **Phase 0–3：Bootstrap、Conda/Persistence、内部 LLM Gateway、Tool Runtime**。本文区分现有实现与目标设计；
+当前实现范围为 **Phase 0–4：Bootstrap、Conda/Persistence、内部 LLM Gateway、Tool Runtime、Bounded Agent Runtime**。本文区分现有实现与目标设计；
 设计中的模块、表、接口和保障不代表已实现。项目是 production-oriented 原型，
-已实现 Tenant/Ticket 持久化，尚不具备认证、真实 Agent 或生产部署能力。
+已实现 Tenant/Ticket 持久化，已实现内部有界 Agent；尚不具备认证或生产部署能力。
 
 约束：原创实现，不复制已有项目代码；Windows 11 + Docker Desktop；Python 3.12+；
 16 GB RAM 开发机不强依赖本地大型模型；所有模型访问经 OpenAI-compatible abstraction；
@@ -123,30 +123,110 @@ Redis/Qdrant 不参与应用 readiness。SELECT 1 不代表 schema 已迁移，�
 测试容器，验证 /ready 503 与 /health 200。finally 清理仅由本次创建的资源。
 运行原始结果保存在忽略的 .artifacts；progress.md 记录真实摘要，不将测试耗时作为性能结论。
 
-Phase 1 之后新增的 Gateway 见第 7 节；Agent runtime、RAG、MCP、认证、frontend、Redis/Qdrant 业务逻辑仍未实现。
+Phase 1 之后新增的 Gateway 见第 7 节；RAG、MCP、认证、frontend、Redis/Qdrant 业务逻辑仍未实现。
 
-## 4. 目标 Agent 工作流（未实现）
+## 4. Bounded LangGraph 1.2 Agent Runtime (implemented)
 
-```text
-intent classification → task planning → knowledge retrieval → tool selection
-→ authorization / human approval → tool execution → reflection → final answer
-```
+LangGraph is orchestration, not the application framework. Custom StateGraph preserves
+provider/business contracts. High-level create_agent, MessagesState and LangChain message
+classes would transfer ownership or require unnecessary adapters, so they are not used.
+The Gateway Protocol describes existing generate behavior; no second gateway/client is created.
 
-LangGraph 状态预计包含 tenant_id、conversation_id、run_id、messages、intent、plan、
-工具调用和结果、引用、审批状态、重试计数、token/cost 预算以及最终答案。
-迭代次数、总 deadline、工具数量和上下文长度必须有硬限制；reflection 不允许无限循环。
-失败统一转为可观测状态；取消请求应传播至模型调用和工具。
+Construction compiles START -> model_turn -> END / execute_tools -> model_turn once.
+Lifespan reuses Gateway/Registry/Executor resources. Compilation is local and zero-provider
+startup works. AgentRuntime.run maps private graph output to AgentRunResult, so extra
+input/output graph schemas add no boundary value. No public execution endpoint exists.
 
-PostgreSQL checkpoint 持久化对话、暂停和恢复；短期 memory 是当前对话摘要，长期 memory
-只保存经策略允许的用户事实，带来源、租户、过期/删除标记。memory 不能绕过知识库 ACL。
-人工审批绑定具体工具名称、参数摘要、版本和调用 ID；修改参数使审批失效。
-拒绝、超时、重复恢复和进程重启必须有测试。ticket_create 等有副作用工具使用幂等键，
-checkpoint 重放不得重复创建工单。
+AgentState is a TypedDict: messages, route, pending_tool_calls, executed_tool_call_ids,
+model_turn_count, tool_calls_seen, tool_executions, successful_tool_count, failed_tool_count.
+Nodes return replacement values; copied tuples/frozensets avoid reducer double-appending.
+State initializes independently per run, including concurrent runs on the same graph.
+Phase 2 Message/ToolCall/LLMRequest/LLMResponse remain authoritative.
+
+Trusted context is a frozen dataclass validated/snapshotted through ToolExecutionContext:
+tenant_id: UUID, tool_policy: ToolExecutionPolicy, optional request_id: UUID.
+context_schema injects Runtime[AgentRunContext].context; deprecated config_schema is not used.
+Trusted tenant/policy never enter mutable state. Dependencies remain outside state.
+AgentRunRequest contains only user_message and route, without prior conversation or limit
+overrides. Authentication remains future work; callers must provide trusted server context.
+
+model_turn checks semantic budget before Gateway invocation, forwards registry definitions
+and correlation, and retains assistant output. Only tool-free finish_reason stop completes.
+execute_tools constructs ToolExecutionContext solely from runtime.context, and dispatches
+only through ToolExecutor. Nodes never call repositories, handlers or provider HTTP directly.
+Existing strict schemas reject tenant_id/allow_writes injection. ToolResult maps explicitly
+to a tool-role Message with matching call ID: validated business data or semantic error
+category/fixed message. Ordinary safe tool errors permit bounded model recovery.
+
+Semantic budgets and duplicate rules:
+
+- Trusted construction-time AgentLimits defaults: M=8 model turns, C=16 requested calls,
+  60 seconds overall. M is 1..100, C 0..100, timeout (0, 3600]. These ceilings also fit the
+  existing Gateway's 500-message contract; no ContextEngine token budget is implied.
+- model_turn_count counts calls to generate, excluding provider retries/fallback.
+  tool_calls_seen counts all model-proposed calls including duplicates.
+  tool_executions counts Executor dispatches, including validation/policy rejections.
+  Successful/failed counts classify returned Executor results; duplicates count in neither.
+- Whole-batch budget validation precedes any side effect. Oversized batches execute none.
+  Duplicate IDs within the same new batch also reject the whole batch before dispatch.
+- Previously dispatched IDs return duplicate_tool_call without re-execution, even after
+  failed ToolResult. Other new IDs in a valid batch execute sequentially.
+  The processed-ID set exists only inside one run.
+- Same logical write under another ID or another run can still duplicate records.
+  This is not business idempotency; persistent keys/execution ledger require later design.
+- Explicit recursion_limit = 2*M+2 permits M model nodes, M tool nodes, the next model
+  budget rejection node and END headroom. Semantic budgets are authoritative. Tests use multiple M values and verify that actual graph semantic budget errors stop first.
+  No framework default is relied on (installed LangGraph default differs from langchain-core).
+  A deliberately too-small limit triggers real GraphRecursionError, mapped to safe
+  AgentRuntimeError with diagnostic category recursion. No limit adjustment/retry occurs.
+
+One outer asyncio.timeout covers all of ainvoke, Gateway attempts and tool rounds.
+Own expiry becomes AgentDeadlineExceededError; external CancelledError propagates unchanged,
+with no subsequent calls. Unrelated TimeoutError remains a runtime failure.
+There is no LangGraph RetryPolicy, cache, error-handler retry or additional node timeout.
+Gateway owns provider retries/fallback; Executor owns per-tool timeout and never retries.
+Ambiguous WRITE completion must never trigger graph replay.
+
+Tools and tool-result messages follow model order. Each tool retains its own transaction:
+multi-tool batches are not globally atomic. Later failure cannot roll back an earlier commit.
+Failed writes retain service validation-before-commit and rollback. Cancellation is cooperative
+and cannot undo a committed write. Persistent/resumable execution is not claimed.
+
+Only COMPLETED returns AgentRunResult with final_message, messages, five counters and
+monotonic duration_ms. Typed configuration/budget/deadline/model/protocol/runtime exceptions
+have fixed safe messages; fatal failures do not return partial state/counters.
+Unexpected framework details, repr or traces never enter model messages or Agent logs.
+Safe Executor failures remain recoverable; broken graph invariants do not.
+
+Fixed Agent log events: start, model turn, tool round, finish, error. Metadata includes
+request ID, counters, duration, safe category; not prompts, assistant bodies, tool arguments,
+ToolResult bodies, ticket descriptions or arbitrary route/name strings. Debug/print streaming
+is disabled. Required transitive LangSmith is used only for tracing_context(enabled=False);
+no external tracing integration/client is configured. Scoped disabling also handles inherited
+tracing opt-in without mutating the environment. trace_policy is unset, not a redaction
+mechanism. execution_info is unused and never part of security.
+
+No checkpointer, Store, InMemorySaver, persistent memory, interrupts, resume, HITL,
+LangGraph Server or external observability is configured. Related transitive packages do
+not imply enabled features.
+
+Future integration points (not implementations):
+
+- ContextEngine may prepare normalized messages before model_turn.
+- Memory Manager may supply authorized context through a future explicit history boundary.
+- Agent Skills may contribute reviewed instructions/tools through composition.
+- MCP adapters may register typed tools while preserving Executor authorization.
+- OpenTelemetry may consume safe run/turn/tool metadata in its own future phase.
+- RAG, reflection, multi-agent, A2A, AG-UI, public API and local models remain unimplemented.
+
+Offline tests script Gateway and execute actual compiled StateGraph. Full-path integration
+retains real Executor, TicketService, TicketRepository and isolated PostgreSQL. SQLAlchemy
+before_commit failure injection tests actual flushed-write rollback without mocking those layers.
 
 ## 5. Typed Tenant-Safe Tool Runtime（Phase 3 已实现）
 
 ```text
-Future Agent / LLM ToolCall + trusted ToolExecutionContext
+Agent / LLM ToolCall + trusted ToolExecutionContext
   → ToolExecutor → ToolRegistry.lookup
   → Pydantic input validation → effect / write policy
   → bounded async handler → TicketService → tenant-scoped Repository → PostgreSQL
@@ -178,7 +258,7 @@ executor 仍校验参数对象形状并执行输入模型的严格 JSON 验证�
 
 `ToolExecutionContext` 为 frozen Pydantic 模型，必须有真实 UUID 类型 tenant_id，
 可选 UUID request_id，以及 ToolExecutionPolicy。上下文在执行前重新验证，缺失/伪造类型
-是调用方编程错误并直接拒绝；认证本身尚未实现。future Agent 的服务端调用方负责构造上下文，
+是调用方编程错误并直接拒绝；认证本身尚未实现。Agent 的服务端调用方负责构造上下文，
 不能将模型内容反序列化成 context，也不能让模型指定 policy。
 tenant_id 不在 ticket 输入 properties 中，extra=forbid 阻止注入；创建也拒绝 id、时间戳。
 ticket_id 只是搜索条件，始终与 context.tenant_id 组合成仓储谓词，猜测 B 的 UUID 不会越权。
@@ -245,7 +325,7 @@ Phase 4 LangGraph 只应调用 gateway 和 executor，不从 graph node 访问 r
 总时长和工具调用数，保持 trusted context，传播取消，消费分类结果并禁止自动重放 WRITE。
 RAG 层存在后才将 knowledge_search 作为新的 READ_ONLY 工具显式注册，ACL 在检索服务内执行。
 未来 MCP adapter 只做协议/认证上下文转换并复用 runtime/policy，不能绕过写策略或导入任意工具。
-LangGraph、RAG/knowledge_search、MCP、raw SQL 工具、认证、HITL UI 和持久化 tracing 均未实现。
+RAG/knowledge_search、MCP、raw SQL 工具、认证、HITL UI 和持久化 tracing 均未实现。
 raw SQL 需要单独设计解析、租户约束、只读角色、表/语句白名单、期限/行数与审计，不在本阶段注册。
 
 ## 6. RAG 与摄取（未实现）

@@ -1,7 +1,7 @@
 # AgentOpsHub Roadmap
 
 每阶段独立验收、小步提交。本文为计划，不将未来能力描述为已完成。
-Phase 0/1/2 已接受；Phase 3 Tool Runtime Foundation 实现及本地验收完成。Phase 4 尚未开始。
+Phase 0-3 accepted; Phase 4 Bounded LangGraph 1.2 Agent Runtime implemented and locally validated. Phase 5 has not started.
 
 | 阶段 | 目标 | 可验证的退出条件 |
 | --- | --- | --- |
@@ -9,12 +9,20 @@ Phase 0/1/2 已接受；Phase 3 Tool Runtime Foundation 实现及本地验收完
 | Phase 1 ✅ | Conda 环境与持久化基础 | 专用 Conda + uv、SQLAlchemy/Alembic、Tenant/Ticket repository、事务与租户条件、/ready、真实 PG 迁移/隔离/回滚测试 |
 | Phase 2 ✅ | Cloud/local-ready LLM gateway | OpenAI-compatible 协议、mock transport 测试、timeout/retry/fallback、usage/cost unknown 语义和预算 |
 | Phase 3 ✅ | Tool Runtime Foundation | 类型化 contract、registry/executor、可信租户 context、写策略、三个内置工具、超时/取消、真实 PG 隔离/回滚与安全日志 |
-| Phase 4 | LangGraph Agent Runtime | 复用 Gateway/ToolExecutor，可信上下文、有限工具循环、步数/时限预算、分类错误与取消；禁止自动重放 WRITE |
-| Phase 5 | RAG Ingestion | 文档状态机、解析/分块、embedding 与存储适配、幂等摄取/删除与来源 |
-| Phase 6 | Hybrid Retrieval + Reranking | BM25/dense、RRF、可选 reranker、knowledge_search、引用与独立检索评测 |
-| 后续 | 审批、幂等与 MCP | HITL 暂停/恢复/拒绝、写幂等协议、MCP server/client、schema/权限/超时测试 |
-| 后续 | 安全与运维强化 | 认证授权、RLS 评估、注入对抗集、OTel/持久化 tracing、限流、审计、备份和故障演练 |
-| 后续 | UI 与展示部署 | 上传/对话/引用/审批/trace 展示，经过验证的演示与部署文档 |
+| Phase 4 complete | Bounded LangGraph 1.2 Agent Runtime | Trusted Runtime context, Gateway/Executor, budgets/deadline, duplicate-ID protection, offline and real PG tests |
+| Phase 5 | Document Ingestion Foundation | Source/status lifecycle, parsing/chunking, tenant isolation and repeatable ingestion boundaries |
+| Phase 6 | Dense / Hybrid Retrieval | Embeddings, dense/lexical storage adapters, tenant filtering and combined retrieval |
+| Phase 7 | Reranking + Retrieval Evaluation | Reranker, standalone metrics and explicit evaluation sources |
+| Phase 8 | Context Engineering Engine | Context selection, token budgets, compression and provenance |
+| Phase 9 | Memory Manager | Authorized memory, provenance, lifecycle and deletion |
+| Phase 10 | Agent Skills | Reviewed instruction/tool composition |
+| Phase 11 | MCP | Adapters preserving tool authorization and tenant boundaries |
+| Phase 12 | Agent Harness / AgentSpec | Reproducible run specifications and configuration |
+| Phase 13 | Grounding / Hallucination Evaluation | Grounded answers and hallucination evaluation |
+| Phase 14 | OpenTelemetry Agent Observability | Safe run/turn/tool telemetry |
+| Phase 15 | Agent Containment / Policy | Permissions, HITL, idempotency and safety constraints |
+| Later | AG-UI, A2A, Local Model Runtime, production deployment | Independent acceptance and explicit authentication/operations boundaries |
+
 
 安全边界从相关模块第一版开始落实，不等到后续安全阶段才补权限。
 Phase 1 的租户上下文测试使用显式测试身份；生产认证接入前不开放真实企业数据。
@@ -39,7 +47,7 @@ Phase 4 必须保留默认拒绝写策略；审批/幂等完成前不可自动�
 
 Phase 2 已实现自有模型协议与 OpenAI-compatible gateway 的 transport mock 测试，
 已验证 timeout/retry/fallback 和 usage/cost unknown 语义；真实 provider 验证仍需后续显式预算。
-不在 Phase 2 同时堆叠 LangGraph、RAG 或 MCP。Phase 2 已按上述边界实现 Gateway；没有开始 Agent、LangGraph 或 RAG。
+不在 Phase 2 同时堆叠 LangGraph、RAG 或 MCP。Phase 2 已按上述边界实现 Gateway；Agent/LangGraph now compose it in Phase 4; RAG remains unimplemented.
 
 ## 实验与提交规则
 
@@ -62,6 +70,14 @@ uv.lock 与依赖声明一同提交；README 数字必须引用公开可复现�
 服务拥有事务并在提交前构造输出，executor 不做任何自动重试。
 真实 PostgreSQL 全套 266 tests passed（含 53 integration）；具体证据见 progress.md。
 
-建议下一步仅为 Phase 4 LangGraph Agent Runtime：有限状态/工具循环、Gateway 与 Executor 适配、
-可信上下文、预算、错误/取消与离线 graph 测试。持久化 checkpoint、HITL 和写幂等应单独明确边界。
-本次停止于 Phase 3；未安装 LangGraph，未开始 Phase 4/5/6，也未实现 RAG、MCP 或 SQL 工具。
+## Phase 4 completion and stopping point
+
+Bounded LangGraph 1.2 runtime composes accepted Gateway/Executor with trusted context,
+whole-run deadline, semantic budgets and same-run call-ID replay protection.
+Sequential tools retain individual transactions; different IDs are not business idempotency.
+No graph retry, checkpointer, Store, public execution endpoint or external tracing.
+
+Exact validation results and process-environment recovery are recorded in progress.md.
+Recommended next scope: Phase 5 Document Ingestion Foundation only.
+STOP at Phase 4: Phase 5, RAG, ContextEngine, Memory, Skills, MCP, A2A/AG-UI, HITL,
+multi-agent, reflection and local model runtime are not implemented.

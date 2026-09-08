@@ -367,3 +367,103 @@ a commit cannot embed its own resulting SHA. No remote push is requested or perf
 Phase 3 is complete. Recommended next scope: Phase 4 bounded LangGraph runtime using
 Gateway/Executor and trusted context, no direct repository calls or automatic WRITE replay.
 Phase 4 is not started; LangGraph is not installed. RAG and MCP are not implemented.
+
+## Phase 4 implementation in progress
+
+Preflight passed through accepted Conda/task-process strategy. Shell initially unactivated; no global/base changes. Design proposal produced before dependency/source changes. Official stable metadata and wheel API reviewed.
+
+Runtime implemented, installed API verified. First focused Agent tests: 52 passed / 1 assertion failure (a forbidden substring matched the approved agent_tool_calls_seen counter, corrected). Strict mypy passed production code. Ruff formatting addressed generated test layout.
+
+First isolated PostgreSQL full run: 335 passed in 16.74s, including 53 offline Agent and
+16 Agent PostgreSQL cases; total app coverage 98%. Real HTTP: health/ready 200; after
+stopping run-owned PostgreSQL, ready 503 and health 200. Migration round-trip/check passed.
+Test type annotations corrected (module imports, invalid fixture casts, frozen-field assertion).
+Graph exception tests now execute actual compiled graph rather than replacing ainvoke.
+A documentation generator failed JavaScript string parsing before execution; switched to
+ASCII Python source with explicit Unicode escapes. Final checks follow documentation review.
+
+## Phase 4 final validation ? 2026-09-08 Asia/Shanghai
+
+Starting accepted SHA: 00fa41009917a6d0eea5d526a38b4612e4f284ce.
+
+Environment recovery: Codex shell was initially not Conda-activated (WindowsApps python,
+no bare uv). This was not a project failure. Existing scripts/dev.py discovers workspace
+uv at D:/Projects/AgentOpsHub/.tools/uv-package/bin/uv.exe. Reused the accepted ignored
+.tools/phase3_run.py: explicit D:/Anaconda3/envs/agentopshub/python.exe, with child-only
+Conda/Scripts/Library, uv and Docker PATH. conda run --no-capture-output -n agentopshub
+was independently verified. No global/user/system PATH, registry, base Conda or shell-profile change.
+
+Python 3.12.14; sys.prefix D:/Anaconda3/envs/agentopshub; uv 0.12.10
+(3c979abda 2026-09-04 x86_64-pc-windows-msvc); Conda 25.11.1; .venv absent.
+LangGraph stable metadata and official wheel source were inspected before installation;
+installed signatures were reviewed before runtime code. langgraph 1.2.11, langchain-core
+1.6.2; top-level langchain absent. pyproject adds only langgraph>=1.2.11,<1.3.
+uv.lock adds LangGraph plus 24 transitive packages, leaving every previous locked version intact.
+LangSmith SDK is required transitively, used only to suppress tracing in a scoped context.
+No LangChain high-level agent/provider packages added.
+
+Commands actually executed (project commands via the accepted Python runner above):
+
+- Discovery: where.exe conda/python/uv, conda --version, conda info --envs;
+  conda run --no-capture-output -n agentopshub python -c interpreter verification.
+- git status, git rev-parse HEAD; python --version; Python sys.executable/sys.prefix,
+  project .venv absence, scripts/dev.py env-info, discovered uv --version.
+- Python read-only repository/API inspection, official PyPI metadata and wheel inspection.
+- python scripts/dev.py lock, sync, sync-check (dry-run: Would make no changes).
+- python scripts/dev.py format, lint, typecheck; focused Ruff import fixes.
+- python -m pytest backend/tests/agents -q: **57 passed in 0.74s**.
+- python scripts/dev.py check: Ruff PASS, format PASS (97 files), strict mypy PASS
+  (81 source files), **270 passed, 69 skipped in 4.55s**; offline coverage 94%.
+  Skips are isolated-PostgreSQL tests and are not counted as database acceptance.
+- python scripts/dev.py test-integration: **339 passed in 16.77s**, zero skips/failures.
+  This includes **57 Agent offline cases**, **16 Agent real-PostgreSQL cases**, and all
+  **266 Phase 0-3 baseline cases**. 69 total integration cases; Gateway 108 offline,
+  Tool Runtime 72 offline, existing tool PostgreSQL 18 all remain green.
+- Full application coverage: **98.3204% combined lines/branches** (display 98%);
+  1325/1338 statements, 197/210 branches. Agent runtime.py 95.6522% combined (display 96%);
+  Agent models/errors/init 100%. Missing runtime lines are defensive impossible-state guards,
+  not skipped integration paths. Raw evidence: .artifacts/phase1-coverage.json.
+- Alembic upgrade/current/downgrade/base/re-upgrade/check PASS inside unique tmpfs test DB:
+  revision 20260908_01; no metadata drift. .artifacts/phase1-migrations.json.
+- Real Uvicorn HTTP probes PASS: /health 200 and /ready 200; after stopping only owned
+  PostgreSQL container, /health 200 and /ready 503. .artifacts/phase1-http.json.
+- python scripts/dev.py hooks: Ruff, format, strict mypy and staged secret hook all PASS.
+- python scripts/dev.py compose-check: PASS.
+- Git diff/source inspection and AST boundary audit: only Gateway.generate and
+  ToolExecutor.execute are invoked; trusted context supplies tenant/policy. No deprecated
+  config_schema, model-controlled security context, direct repository/provider call,
+  node RetryPolicy, hidden retries, parallel tools, raw exception logging, public endpoint,
+  checkpointer or Store. Oversized/duplicate batches preflight before dispatch.
+- Staged review and final Git checks/commit are the final operations, recorded by Git history.
+
+Security evidence: real Tenant A search returns only A rows; B UUID lookup returns empty;
+trusted create commits an A ticket and is invisible under B. Injected tenant_id/allow_writes
+are input_validation failures. Trusted write denial creates zero tickets. Replayed create ID
+creates one ticket; same-batch duplicates and oversized batches create zero. Real before_commit
+failure rolls back a flushed ticket and does not replay even on repeated ID. Unrelated B
+records remain unchanged. Different IDs intentionally create two same-title tickets, proving
+the documented business-idempotency limitation. A committed write survives subsequent model error.
+
+No real external LLM API, paid call, local model process or model weights were used.
+Package metadata/dependency downloads are the only external service access added for this phase.
+No RAG, ContextEngine, Memory, Skills, MCP, A2A/AG-UI, HITL, persistent execution, reflection,
+multi-agent, public Agent API or local LLM runtime was implemented.
+
+Known limits: no cross-run/business idempotency; sequential batches are not globally atomic;
+cancellation is cooperative and cannot undo commits; fatal errors expose no partial counters;
+no prior-history input, persistent state, authentication or production tracing. Conda inexact
+sync preserves bootstrap/extra packages and needs review if dependencies are later removed.
+
+Phase 4 is complete. Recommended next scope: Phase 5 Document Ingestion Foundation
+(source/status lifecycle, tenant-safe parsing/chunking and repeatable ingestion boundaries).
+Phase 5 is not started. One Phase 4 commit is created after staged review; no push.
+
+Exact added lock packages: certifi==2026.7.22, charset-normalizer==3.5.1, distro==1.9.0, httpcore==1.0.9, httpx==0.28.1, jsonpatch==1.33, jsonpointer==3.1.1, langchain-core==1.6.2, langchain-protocol==0.0.19, langgraph==1.2.11, langgraph-checkpoint==4.2.0, langgraph-prebuilt==1.1.0, langgraph-sdk==0.4.4, langsmith==0.12.2, orjson==3.12.0, ormsgpack==1.12.2, requests==2.34.2, requests-toolbelt==1.0.0, sniffio==1.3.1, tenacity==9.1.4, urllib3==2.7.0, uuid-utils==0.17.1, websockets==16.1.1, xxhash==4.0.1, zstandard==0.25.0.
+
+Final staged audit: 23 explicitly selected files, each index blob matched reviewed worktree bytes,
+all UTF-8/LF, Python ASTs parsed. No environment files, credentials, database/coverage/log artifacts,
+binaries or model weights staged. git diff --check and git diff --cached --check passed.
+Existing accepted HEAD was rechecked before commit. Commit command uses the same child-only
+Conda PATH wrapper: git commit -m "feat: add bounded langgraph agent runtime".
+Final SHA and clean post-commit status are recorded in Git history and the final response;
+a commit cannot embed its own SHA. No push or Phase 5 work.

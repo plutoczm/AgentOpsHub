@@ -13,5 +13,5 @@ Writes default to denied. TicketService owns transactions; repositories never co
 Read handlers use non-committing sessions. No automatic retries or idempotency deduplication.
 Timeout/commit ambiguity means a failed write must not be blindly replayed.
 
-No HTTP execution route, LangGraph, knowledge_search/RAG, MCP, raw SQL, dynamic loading,
+Phase 4 LangGraph composes this Executor. No HTTP execution route, knowledge_search/RAG, MCP, raw SQL, dynamic loading,
 authentication or persistent tool tracing. See root ARCHITECTURE.md section 5 and progress.md.

@@ -10,6 +10,11 @@ request_id_context: ContextVar[str | None] = ContextVar("request_id", default=No
 EVENTS = frozenset(
     {
         "application_started",
+        "agent_start",
+        "agent_model_turn",
+        "agent_tool_round",
+        "agent_finish",
+        "agent_error",
         "llm_attempt",
         "llm_result",
         "tool_start",
@@ -23,6 +28,12 @@ EVENTS = frozenset(
     }
 )
 FIELDS = (
+    "agent_error",
+    "agent_model_turns",
+    "agent_tool_calls_seen",
+    "agent_tool_executions",
+    "agent_successful_tools",
+    "agent_failed_tools",
     "method",
     "route",
     "status_code",

@@ -1,4 +1,4 @@
-"""FastAPI application factory for the Phase 0 backend."""
+"""FastAPI composition root with lifecycle-owned internal runtimes."""
 
 import logging
 from collections.abc import AsyncIterator
@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app import __version__
+from app.agents import AgentRuntime
 from app.api.health import router
 from app.api.readiness import router as readiness_router
 from app.core.config import Settings, load_settings
@@ -48,6 +49,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.llm_gateway = gateway
         app.state.tool_registry = build_tool_registry(database)
         app.state.tool_executor = ToolExecutor(app.state.tool_registry)
+        app.state.agent_runtime = AgentRuntime(
+            gateway, app.state.tool_registry, app.state.tool_executor
+        )
         logger.info("application_started")
         try:
             yield

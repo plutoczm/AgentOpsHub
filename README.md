@@ -2,9 +2,9 @@
 
 Enterprise AI Agent Platform — 企业技术支持后端。
 
-**已实现：Phase 0–3（后端基础、持久化、内部 LLM Gateway、Typed Tenant-Safe Tool Runtime）。**
-当前包含 FastAPI、配置/日志、PostgreSQL Tenant/Ticket、Alembic、内部 LLM Gateway、三个类型化工具，以及离线模型/工具测试和真实数据库测试。
-尚无业务 CRUD HTTP 接口、认证、Agent runtime、RAG、MCP、前端、本地推理运行时或持久化 LLM tracing。
+**已实现：Phase 0–4（后端基础、持久化、内部 LLM Gateway、Typed Tenant-Safe Tool Runtime、Bounded LangGraph Agent Runtime）。**
+当前包含 FastAPI、配置/日志、PostgreSQL Tenant/Ticket、Alembic、内部 LLM Gateway、三个类型化工具、有界 LangGraph 执行循环，以及离线模型/工具测试和真实数据库测试。
+尚无业务 CRUD HTTP 接口、认证、公开 Agent API、RAG、MCP、前端、本地推理运行时或持久化 LLM tracing。
 Redis/Qdrant 仍是基础设施预留，运行时仅使用 PostgreSQL。没有 benchmark 或性能声明。
 
 ## 本地 Windows 推荐环境：Conda + uv
@@ -256,7 +256,7 @@ LLM 测试阻止默认网络 transport，使用 MockTransport 经过真实序列
 全套验收保留真实 PostgreSQL 回归；无需模型 key、互联网模型服务、GPU 或本地模型服务器。
 
 没有安装 CUDA/ML 框架或下载权重。Local endpoint 支持不等于本地运行时管理；
-Agent、LangGraph、RAG、MCP、embedding、持久化 LLM tracing 均未实现。
+Gateway is composed by Phase 4 AgentRuntime. RAG, MCP, embedding and persistent tracing remain unimplemented.
 
 ## 内部 Tool Runtime（Phase 3）
 
@@ -293,7 +293,7 @@ Executor 依次查找、验证、检查 effect/写策略、注入上下文、限
 每工具 `asyncio.timeout` 默认 10 秒，system_status 为 5 秒，可在可信注册时设置 (0, 300] 秒。
 `CancelledError` 传播；延迟通过 `perf_counter()` 测量。超时是协作式取消，handler 必须异步、
 不阻塞事件循环、不吞取消。提交边界发生超时/断连时完成状态可能未知，不能据错误推断一定未写入。
-Executor 对读写工具均不自动重试，也没有幂等去重；后续 Agent 重放 ticket_create 可能产生重复记录。
+Executor never retries. Phase 4 Agent suppresses same-run ID replay; new IDs can still duplicate logical writes.
 
 `ToolResult` 包含 tool_call_id/tool_name/success/data/error/duration_ms。
 错误分类为 not_found、input_validation、policy、timeout、execution、result_validation，
@@ -306,11 +306,88 @@ Executor 对读写工具均不自动重试，也没有幂等去重；后续 Agen
 策略拒绝、实际提交、flush 后异常/超时/取消回滚、提交失败和日志安全。
 详情和实际命令结果见 [progress.md](progress.md)。
 
-尚未实现 LangGraph Agent、RAG/knowledge_search、MCP、raw SQL 工具、认证、持久化工具 tracing、
+尚未实现 RAG/knowledge_search、MCP、raw SQL 工具、认证、持久化工具 tracing、
 HITL UI 或 HTTP 工具执行接口。当前只有显式注册的三个工具，无动态插件加载或任意代码执行。
+
+## Bounded LangGraph Agent Runtime (Phase 4)
+
+Installed and locked: **langgraph 1.2.11**, **langchain-core 1.6.2**.
+Only LangGraph is a new direct dependency; top-level langchain is absent.
+Checkpoint/prebuilt/SDK packages and LangSmith are required transitive dependencies,
+not enabled persistent checkpoint or external tracing features.
+
+The internal app.state.agent_runtime is compiled once in lifespan using the existing
+LLMGateway, ToolRegistry and ToolExecutor. Compilation performs no model I/O,
+startup works with zero providers, and there is no public Agent endpoint.
+
+    START -> model_turn -> END (normal final assistant response)
+                  |
+                  v
+             execute_tools -> model_turn
+
+AgentRunRequest accepts user_message and logical route only; history is not supported yet.
+Server-side callers separately supply frozen AgentRunContext(tenant_id, tool_policy, request_id).
+Writes default to denied. StateGraph(AgentState, context_schema=AgentRunContext) injects
+Runtime[AgentRunContext]; nodes read runtime.context. Deprecated config_schema is not used.
+
+AgentState holds normalized messages, route, pending calls, processed IDs and counters.
+All updates replace values, with no additive reducers or LangChain message conversions.
+State is independent per run. The model node calls only Gateway with registry definitions;
+the tool node calls only Executor with trusted tenant/write policy. Tool messages contain
+validated business data or safe error category/message with the corresponding tool_call_id.
+
+| Counter | Exact meaning |
+| --- | --- |
+| model_turn_count | Agent invocations of Gateway; provider retries/fallback are not extra turns |
+| tool_calls_seen | Every call proposed by model responses, including duplicate IDs |
+| tool_executions | Calls dispatched to Executor, including input/policy rejections |
+| successful_tool_count | Dispatched calls returning successful ToolResult |
+| failed_tool_count | Dispatched calls returning failed ToolResult |
+
+Synthetic duplicate results increase neither execution nor success/failure counters.
+On completed runs, successes + failures = executions. Fatal failures raise typed exceptions;
+they do not return completion or partial counters.
+
+Trusted construction-time AgentLimits defaults: 8 model turns, 16 tool calls, 60 seconds
+for the **whole run**. Entire batches are checked against remaining tool-call budget and
+for duplicate IDs before dispatch: oversized or duplicate-ID batches execute zero new tools.
+An ID dispatched earlier in the run gets a fixed duplicate_tool_call message without re-execution,
+even after an earlier failed Executor result. Limits cannot be supplied in request/model content.
+
+Tools run sequentially in model order. Each retains its existing transaction;
+multi-tool execution is **not globally atomic**. A committed write survives a later failure.
+Same-run ID protection is not business idempotency: logically identical writes with different
+IDs still create separate tickets. No persistent execution or replay/resume is implemented.
+
+The outer asyncio timeout covers the entire ainvoke, including Gateway retries and all rounds.
+Its expiry raises AgentDeadlineExceededError; caller CancelledError propagates unchanged and
+stops subsequent calls. Gateway and Executor retain their existing timeouts. No graph node
+retries, fallback, cache, error handler or extra node timeout is configured.
+Explicit recursion_limit = 2 * max_model_turns + 2 allows M model and M tool nodes,
+the next budget rejection node and completion headroom. Semantic budgets stop first;
+unexpected GraphRecursionError becomes a safe AgentRuntimeError.
+
+Only a normal final response returns AgentRunResult with COMPLETED, final_message,
+normalized messages, counters and monotonic duration_ms. Budget/deadline/model/protocol/runtime
+failures are typed errors with fixed safe messages; truncated responses are not completion.
+
+Agent logs contain fixed events, trusted request IDs, counters, duration and safe categories,
+never prompts, assistant bodies, arguments, results, ticket text or exception payloads.
+External LangSmith tracing is explicitly disabled in a scoped context, including inherited
+environment opt-in; no environment variables are changed. Node trace_policy and execution_info
+are unused. No checkpointer, Store or persistent Agent memory is configured.
+
+Offline tests use a test-only scripted Gateway and the actual compiled StateGraph.
+PostgreSQL tests retain real Executor, TicketService, TicketRepository and isolated PostgreSQL.
+Run python -m pytest backend/tests/agents -q and python scripts/dev.py test-integration
+under the accepted Conda workflow. Exact results: [progress.md](progress.md).
+
+**Not implemented:** RAG, ContextEngine, Memory Manager, Skills, MCP, A2A, AG-UI, HITL,
+persistent checkpointing, persistent Agent memory, public Agent API, multi-agent, reflection,
+authentication, frontend or local LLM runtime. Phase 5 is not started.
 
 ## 设计与 License
 
 [ARCHITECTURE.md](ARCHITECTURE.md) 区分现有实现与未来设计；
-[ROADMAP.md](ROADMAP.md) 记录阶段状态。Phase 3 已完成；Phase 4 尚未开始。
+[ROADMAP.md](ROADMAP.md) 记录阶段状态。Phase 4 is implemented; Phase 5 has not started.
 MIT，见 [LICENSE](LICENSE)。

@@ -3,7 +3,7 @@
 from typing import Protocol
 
 from app.llm.config import ProviderProfile
-from app.llm.models import Capabilities, LLMRequest, ProviderResult
+from app.llm.models import Capabilities, LLMRequest, LLMResponse, ProviderResult
 
 
 class LLMProvider(Protocol):
@@ -22,4 +22,12 @@ class LLMProvider(Protocol):
 
     async def close(self) -> None:
         """Release resources owned by this provider."""
+        ...
+
+
+class Gateway(Protocol):
+    """Application-facing generation boundary, also satisfied by scripted test gateways."""
+
+    async def generate(self, request: LLMRequest) -> LLMResponse:
+        """Return normalized output; provider retries remain internal to the gateway."""
         ...
