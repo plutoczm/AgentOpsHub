@@ -254,3 +254,116 @@ embedding a commit's own SHA in its tracked content would change that SHA.
   package location reverified; .venv remains absent; temporary test containers cleaned.
 - Prepared one commit: `feat: add cloud and local-ready llm gateway`; no remote push.
   Git history/final report record the final SHA and post-commit clean status.
+
+## Phase 3 preflight and design
+
+- Accepted HEAD cbec5b62eb0bceaee055f9a30ecc49239a66b583; clean worktree.
+- Python 3.12.14 at D:/Anaconda3/envs/agentopshub/python.exe; uv 0.12.10; no .venv.
+- Shell PATH issue resolved using explicit interpreter and workspace uv, no user configuration changes.
+- A-O proposal published. Runtime separates LLM protocol from business execution.
+- No new dependencies planned. Stop after Phase 3.
+
+## Phase 3 implementation and validation
+
+- Added generic Tool contract, strict ToolModel, trusted context/policy, semantic errors,
+  explicit registry, schema bridge, executor and exactly three built-ins.
+- Added TicketService with non-committing read sessions and service-owned write transactions.
+  Application lifespan composes internal runtime; no HTTP tool routes were added.
+- No dependencies added or changed; pyproject.toml and uv.lock remain unchanged.
+- sync and sync-check passed against the accepted Conda prefix; dry-run: Would make no changes.
+- Initial focused run: 71 passed / 1 failed (test incorrectly scanned schema prose for tenant_id).
+  Corrected to inspect schema properties. Strict mypy required explicit casts for intentionally
+  invalid test fixtures. First Ruff run fixed imports; formatter resolved long lines.
+- One attempted inline Python edit failed shell quoting before execution; subsequent edits used
+  UTF-8 Python files. No partial code edits resulted from that failed command.
+- Final code check: Ruff lint/format passed; strict mypy passed (72 source files);
+  pytest: 213 passed, 53 explicitly skipped without isolated PostgreSQL, in 3.79s.
+- Real PostgreSQL runner: **266 passed in 13.84s**, no skips: 213 offline + 53 integration.
+  New tests: 72 offline tool tests and 18 PostgreSQL tool cases; existing 176 regressions preserved.
+- Full branch-aware coverage: **98.54517611026034% (99% displayed)**; 1126 statements,
+  10 missing statements, 180 branches, 171 covered branches, 7 partial branches.
+  All new tools/services have 100% measured line/branch coverage. Coverage defaults exclude
+  Protocol declarations; no exclusion, lint/type rule or quality threshold was relaxed.
+- Real PG evidence: both tenant injections rejected; foreign ticket UUID returns no data;
+  trusted-tenant create commits, other tenant remains intact; denial opens zero transactions;
+  reads commit zero times; flush-then-error/timeout/cancel/DTO failure and commit failure roll back.
+  Timeout integration test reschedules the deadline immediately after real flush, avoiding
+  dependence on database speed. Write handler call count remains exactly one on failures.
+- LogRecord payloads and formatted JSON both exclude raw arguments, ticket titles/descriptions,
+  synthetic database details and Authorization. Unknown tool names and model call IDs are omitted.
+- Existing LLM suite: 108 offline tests passed within full suite (configuration, transport,
+  retry/fallback, strict output, secret safety, private/local profiles and zero-provider startup).
+- Migration upgrade/current/downgrade/re-upgrade/check passed at 20260908_01.
+- Actual HTTP: /health=200, /ready=200; after stopping only the run-owned database,
+  /ready=503, /health=200. Request IDs and password absence checks passed.
+- Test-owned PostgreSQL container/network cleaned; development data not used.
+
+Evidence copies: .artifacts/phase3-pytest.txt, phase3-coverage.json, phase3-migrations.json,
+phase3-http.json and phase3-http.log (ignored). The inherited runner still writes phase1 names.
+Test timings are execution evidence, not application performance benchmarks.
+
+Known limits: no authentication/RLS, graph, retrieval, MCP, SQL tool, durable traces,
+HITL or write idempotency. Effect declarations trust registered application code.
+Timeout is cooperative; handlers must not block or suppress cancellation. Commit-boundary
+failure may leave completion unknown; no write is retried automatically. Reusing a tool call
+ID does not deduplicate. Executor post-validation cannot undo already committed arbitrary handlers;
+built-in create validates its DTO before commit. Remote CI/Linux/Python 3.13 were not executed.
+AnyIO <4.15 compatibility ceiling remains unchanged.
+
+## Phase 3 final gates and staged review
+
+- Explicit offline selection: `python -m pytest -m "not integration" -q`:
+  **213 passed, 53 deselected in 2.56s**. This is distinct from the full PostgreSQL run.
+- `python scripts/dev.py hooks`: all four pre-commit hooks passed (Ruff lint,
+  Ruff format check, strict mypy, staged credential guard).
+- `python scripts/dev.py compose-check`: passed.
+- Reviewed 27 staged files and complete staged diff; no migrations, dependency files,
+  dotenv, credential values, environments, binaries, DB files, logs or test artifacts staged.
+  Local credential exclusion audit compared values without printing them.
+- Inspected trusted tenant propagation and policy-before-handler order. No runtime/service
+  subprocess, eval/exec, dynamic import, SQL generation or retry loop was found.
+  Runtime LogRecords contain only approved metadata; raw exception data is not attached.
+- `git diff --check` and `git diff --cached --check`: passed.
+- Reverified Python 3.12.14; sys.executable D:/Anaconda3/envs/agentopshub/python.exe;
+  sys.prefix D:/Anaconda3/envs/agentopshub, with conda-meta present. Pydantic, SQLAlchemy and
+  pytest resolve within that prefix. uv 0.12.10; .venv absent; LangGraph/LangChain/MCP absent.
+
+Commands actually executed used the explicit accepted interpreter and an ignored Python
+wrapper that prepends Conda/Scripts/Library, workspace uv and Docker to the child PATH only.
+No shell profile or user configuration was modified. Equivalent project commands:
+
+```text
+git status --short
+git rev-parse HEAD
+python --version
+python -c "import sys; print(sys.executable); print(sys.prefix)"
+uv --version
+python scripts/dev.py sync
+python scripts/dev.py sync-check
+python scripts/dev.py format
+python scripts/dev.py lint
+python scripts/dev.py typecheck
+python scripts/dev.py check
+python -m pytest backend/tests/tools -q
+python -m pytest -m "not integration" -q
+python scripts/dev.py test-integration
+python scripts/dev.py compose-check
+git diff
+git add -- <explicit Phase 3 paths>
+git diff --cached
+git diff --check
+git diff --cached --check
+python scripts/dev.py hooks
+```
+
+Initial bare python/uv resolution did not work in the unactivated terminal; all actual
+package executions thereafter used the verified explicit Conda interpreter. The integration
+runner invokes pytest with coverage, Alembic upgrade/current/downgrade/upgrade/check, and
+real Uvicorn/HTTP probes. Focused AST and staged credential audits ran as ignored Python scripts.
+
+The final operation creates one commit, `feat: add typed tenant-safe tool runtime`.
+Git history and the final response record its SHA and the post-commit clean-status check;
+a commit cannot embed its own resulting SHA. No remote push is requested or performed.
+Phase 3 is complete. Recommended next scope: Phase 4 bounded LangGraph runtime using
+Gateway/Executor and trusted context, no direct repository calls or automatic WRITE replay.
+Phase 4 is not started; LangGraph is not installed. RAG and MCP are not implemented.

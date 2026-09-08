@@ -34,3 +34,19 @@ Official reference material consulted for API/operational behavior:
 - https://api-docs.deepseek.com/api/create-chat-completion/ — chat wire format.
 - https://docs.modelstudio.console.alibabacloud.com/en/model-studio/qwen-structured-output
   — Qwen compatible API and region/workspace-specific endpoint configuration.
+
+## Phase 3 discovery
+
+- TicketRepository already enforces tenant predicates and bounded status-filtered list.
+- Database.transaction owns commit/rollback; repository create only flushes.
+- Read-only service can use Database.sessions without commit.
+- LLM ToolCall arguments are parsed JSON objects; runtime must validate business schema.
+- JsonFormatter uses event/field allowlists; runtime adds metadata only.
+- Existing roadmap numbers conflict with the new request; update Phase 3/4/5/6 to requested sequence.
+
+- Final design uses contracts.py to co-locate generic Tool and the small heterogeneous Protocol;
+  no separate adapters/policy framework needed. Existing LLM schemas are generated directly.
+- No priority search filter: reuse the existing status/limit API plus tenant-scoped exact ID.
+- Service validates create DTO before commit. Generic executor output validation cannot retroactively
+  undo arbitrary handler commits; timeout/commit ambiguity is documented, no hidden retry.
+- Full isolated PostgreSQL validation: 266 passed; all new service/runtime paths covered.

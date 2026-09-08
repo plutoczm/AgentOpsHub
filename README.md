@@ -2,8 +2,8 @@
 
 Enterprise AI Agent Platform — 企业技术支持后端。
 
-**已实现：Phase 0–2（后端基础、持久化、内部 cloud/local-ready LLM Gateway）。**
-当前包含 FastAPI、配置/日志、PostgreSQL Tenant/Ticket、Alembic、内部 LLM Gateway，以及离线模型测试和真实数据库测试。
+**已实现：Phase 0–3（后端基础、持久化、内部 LLM Gateway、Typed Tenant-Safe Tool Runtime）。**
+当前包含 FastAPI、配置/日志、PostgreSQL Tenant/Ticket、Alembic、内部 LLM Gateway、三个类型化工具，以及离线模型/工具测试和真实数据库测试。
 尚无业务 CRUD HTTP 接口、认证、Agent runtime、RAG、MCP、前端、本地推理运行时或持久化 LLM tracing。
 Redis/Qdrant 仍是基础设施预留，运行时仅使用 PostgreSQL。没有 benchmark 或性能声明。
 
@@ -241,7 +241,7 @@ capabilities 明确声明 tool_calling/json_mode/structured_output，默认全�
 
 日志只增加 llm_attempt/llm_result 固定事件和允许元数据；prompt、响应正文、API key、
 Authorization、原始错误正文默认不记录。兼容请求 ID context，独立使用无需 HTTP 请求。
-provider 响应缓冲有上限；工具参数仍是不可信数据，未来执行者须验证和授权。
+provider 响应缓冲有上限；工具参数仍是不可信数据，由独立 ToolExecutor 验证并执行写策略，Gateway 本身不执行工具。
 
 ### 验证与明确边界
 
@@ -258,8 +258,59 @@ LLM 测试阻止默认网络 transport，使用 MockTransport 经过真实序列
 没有安装 CUDA/ML 框架或下载权重。Local endpoint 支持不等于本地运行时管理；
 Agent、LangGraph、RAG、MCP、embedding、持久化 LLM tracing 均未实现。
 
+## 内部 Tool Runtime（Phase 3）
+
+`app/tools` 是 LLM 生成的 ToolCall 与业务服务之间的执行边界。Gateway 只生成/解析协议；
+ToolExecutor 执行注册的业务工具。应用 lifespan 显式组装 `app.state.tool_registry` 和
+`app.state.tool_executor`，独立使用可调用 `build_tool_registry(database)`，不产生启动网络探测。
+
+`Tool[Input, Output]` 绑定名称、说明、Pydantic 模型、effect、超时和异步 handler。
+名称必须匹配 `[a-z][a-z0-9_]{0,63}`；`ToolRegistry.register()` 拒绝重名，
+`lookup()` 按精确名称查找，`list_tools()` 按名称排序，`llm_definitions()` 返回现有
+`app.llm.models.ToolDefinition`。参数 JSON Schema 由输入模型自动生成，无手写重复 schema。
+
+调用方必须提供 `ToolExecutionContext(tenant_id=<可信 UUID>)`，可附带 request UUID 和
+`ToolExecutionPolicy(allow_writes=True)`；默认 `allow_writes=False`。
+该上下文来自受信任应用代码，不从模型参数构造。工具输入禁止额外字段，包括 tenant_id、
+allow_writes、数据库 ID 和时间戳等非声明字段。严格 JSON 校验拒绝缺字段、错误类型和非法枚举，
+允许 UUID/枚举使用合法 JSON 字符串，不把字符串数字或 bool 强转为整数。
+
+| 工具 | effect | 输入 | 输出 |
+| --- | --- | --- | --- |
+| system_status | READ_ONLY | 空对象 | application=ok；postgresql=ok/unavailable |
+| ticket_search | READ_ONLY | status 可选；limit 默认 20、范围 1–100；ticket_id 可选 | 当前租户的有界工单摘要 |
+| ticket_create | WRITE | title 1–300 字符且非空白；description 最多 10000；priority 默认 medium | 新工单摘要 |
+
+工单摘要仅含 id/title/status/priority，不包含 description 或 tenant_id。搜索按既有仓储的
+created_at/id 顺序返回；精确 ID 查询同样带 tenant 条件，并同时应用 status 条件。
+没有 priority 搜索过滤器或任意查询语言。创建时 UUID、时间戳和初始 open 状态由应用/数据库决定。
+
+Executor 依次查找、验证、检查 effect/写策略、注入上下文、限时调用并校验输出。
+策略拒绝发生在调用服务和打开事务之前。`TicketService` 的每次查询使用独立只读 session，
+不 commit；创建使用 `Database.transaction()`，仓储仅 flush，DTO 在提交前验证。
+异常或取消使未提交写入回滚。所有仓储调用均显式传入 context.tenant_id。
+
+每工具 `asyncio.timeout` 默认 10 秒，system_status 为 5 秒，可在可信注册时设置 (0, 300] 秒。
+`CancelledError` 传播；延迟通过 `perf_counter()` 测量。超时是协作式取消，handler 必须异步、
+不阻塞事件循环、不吞取消。提交边界发生超时/断连时完成状态可能未知，不能据错误推断一定未写入。
+Executor 对读写工具均不自动重试，也没有幂等去重；后续 Agent 重放 ticket_create 可能产生重复记录。
+
+`ToolResult` 包含 tool_call_id/tool_name/success/data/error/duration_ms。
+错误分类为 not_found、input_validation、policy、timeout、execution、result_validation，
+消息来自固定安全词表，不携带数据库错误、连接串、API key 或 stack trace。
+可信上下文本身非法属于调用方契约错误，在执行前拒绝。
+日志事件 tool_start/tool_result/tool_error 只记录注册名称、effect、request ID、耗时、结果及错误分类；
+不记录参数、call ID、tenant ID、工单标题/描述、结果正文或异常内容。未知工具名也不写入日志。
+
+离线测试直接调用 executor；PostgreSQL 集成测试使用既有隔离 runner，验证租户隔离、
+策略拒绝、实际提交、flush 后异常/超时/取消回滚、提交失败和日志安全。
+详情和实际命令结果见 [progress.md](progress.md)。
+
+尚未实现 LangGraph Agent、RAG/knowledge_search、MCP、raw SQL 工具、认证、持久化工具 tracing、
+HITL UI 或 HTTP 工具执行接口。当前只有显式注册的三个工具，无动态插件加载或任意代码执行。
+
 ## 设计与 License
 
 [ARCHITECTURE.md](ARCHITECTURE.md) 区分现有实现与未来设计；
-[ROADMAP.md](ROADMAP.md) 记录阶段状态。Phase 2 已实现；Phase 3 尚未开始。
+[ROADMAP.md](ROADMAP.md) 记录阶段状态。Phase 3 已完成；Phase 4 尚未开始。
 MIT，见 [LICENSE](LICENSE)。

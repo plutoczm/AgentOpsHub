@@ -15,6 +15,8 @@ from app.core.middleware import RequestContextMiddleware
 from app.db.session import Database
 from app.llm.gateway import LLMGateway
 from app.observability.logging import configure_logging
+from app.tools.builtin import build_tool_registry
+from app.tools.executor import ToolExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +46,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.database = database
         gateway = LLMGateway(resolved.llm)
         app.state.llm_gateway = gateway
+        app.state.tool_registry = build_tool_registry(database)
+        app.state.tool_executor = ToolExecutor(app.state.tool_registry)
         logger.info("application_started")
         try:
             yield

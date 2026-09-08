@@ -4,7 +4,7 @@ Enterprise AI Agent Platform — 企业技术支持 / IT Support 场景。
 
 ## 1. 状态与边界
 
-当前实现范围为 **Phase 0–2：Bootstrap、Conda/Persistence、内部 LLM Gateway**。本文区分现有实现与目标设计；
+当前实现范围为 **Phase 0–3：Bootstrap、Conda/Persistence、内部 LLM Gateway、Tool Runtime**。本文区分现有实现与目标设计；
 设计中的模块、表、接口和保障不代表已实现。项目是 production-oriented 原型，
 已实现 Tenant/Ticket 持久化，尚不具备认证、真实 Agent 或生产部署能力。
 
@@ -27,7 +27,8 @@ flowchart TD
     Graph --> Policy[工具策略与人工审批]
     Policy --> Tools[Typed tools]
     Tools --> RAG[检索服务]
-    Tools --> Repos[Repositories]
+    Tools --> TicketService[Ticket Service]
+    TicketService --> Repos[Repositories]
     Graph --> Gateway[模型 Gateway]
     RAG --> Gateway
     Gateway --> Providers[OpenAI-compatible providers]
@@ -142,20 +143,110 @@ PostgreSQL checkpoint 持久化对话、暂停和恢复；短期 memory 是当�
 拒绝、超时、重复恢复和进程重启必须有测试。ticket_create 等有副作用工具使用幂等键，
 checkpoint 重放不得重复创建工单。
 
-## 5. 工具与 MCP（未实现）
+## 5. Typed Tenant-Safe Tool Runtime（Phase 3 已实现）
 
-| Tool | 输入与输出边界 | 权限和执行策略 |
-| --- | --- | --- |
-| knowledge_search | query/filters/top_k → 带来源的 chunks | 租户与文档 ACL 在检索前过滤 |
-| ticket_search | 查询条件 → 工单摘要 | 绑定调用者租户，限制分页和字段 |
-| ticket_create | 标题/描述/优先级 → 工单 ID | 人工审批、幂等键、审计事件 |
-| sql_query | 受约束查询 → 有界结果 | 只读 DB 角色、表白名单、SQL AST 校验、超时/行数限制 |
-| system_status | 允许的服务标识 → 状态 | 禁止任意 URL/命令，防止 SSRF 和 shell 注入 |
+```text
+Future Agent / LLM ToolCall + trusted ToolExecutionContext
+  → ToolExecutor → ToolRegistry.lookup
+  → Pydantic input validation → effect / write policy
+  → bounded async handler → TicketService → tenant-scoped Repository → PostgreSQL
+                         → injected database.ready check (system_status)
+  → output validation → safe ToolResult + metadata-only logs
+```
 
-统一 Pydantic input/output schema、ToolContext、deadline 与分类错误。
-工具声明 risk level 和 required scopes，由服务端策略执行；模型无权给自己授权。
-MCP server 后续暴露部分相同工具，复用 service 和授权逻辑；client 只连接配置允许的 server，
-校验 schema、限制超时/结果大小、区分可信控制指令和不可信工具输出。
+### 协议、契约与注册
+
+LLM 包拥有 ToolDefinition/ToolCall 的协议表示；tools 包拥有实际执行。Gateway 从不调用
+ToolExecutor 或 repository。注册工具用 Pydantic `model_json_schema()` 生成现有 ToolDefinition，
+`ToolRegistry.llm_definitions()` 可直接供 LLMRequest.tools 使用，不维护第二套 wire schema。
+
+不可变泛型 dataclass `Tool[Input, Output]` 绑定 name/description/input_model/output_model/
+effect/timeout_seconds/异步 handler。输入继承严格 ToolModel；输出为明确 Pydantic model。
+`RegisteredTool` Protocol 仅擦除异构注册时的泛型差异，handler 内保留具体输入输出类型。
+名称使用 `[a-z][a-z0-9_]{0,63}`，小写字母开头、最长 64。期限必须有限且在 (0, 300] 秒内。
+Registry 提供 register/lookup/list_tools/llm_definitions；重复抛 ValueError 并保留原工具，
+缺失抛 ToolNotFoundError，列表为按名称排序的 tuple。每次导出的 schema 独立，修改它不改变工具。
+注册只允许应用显式绑定可信代码；没有扫描、动态 import、MCP discovery 或任意函数名调用。
+READ_ONLY 是可信 handler 的声明，不是沙箱；新增 handler 必须审查副作用是否与声明一致。
+
+### Executor 生命周期、可信上下文与校验
+
+入口 execute(call, context) 接收既有 normalized ToolCall。Phase 2 已解析 JSON object；
+executor 仍校验参数对象形状并执行输入模型的严格 JSON 验证。JSON UUID/枚举字符串有效，
+错误类型、缺字段、非法枚举、非有限 JSON 数值、未知字段失败。禁止任意 dict 直通仓储。
+输出重新验证并 JSON 序列化，只返回符合输出契约的数据；非法输出映射 result_validation。
+
+`ToolExecutionContext` 为 frozen Pydantic 模型，必须有真实 UUID 类型 tenant_id，
+可选 UUID request_id，以及 ToolExecutionPolicy。上下文在执行前重新验证，缺失/伪造类型
+是调用方编程错误并直接拒绝；认证本身尚未实现。future Agent 的服务端调用方负责构造上下文，
+不能将模型内容反序列化成 context，也不能让模型指定 policy。
+tenant_id 不在 ticket 输入 properties 中，extra=forbid 阻止注入；创建也拒绝 id、时间戳。
+ticket_id 只是搜索条件，始终与 context.tenant_id 组合成仓储谓词，猜测 B 的 UUID 不会越权。
+
+执行顺序：解析已注册名称 → input validation → READ_ONLY/WRITE 判定 → policy →
+async handler（带可信 context）→ output validation → ToolResult。
+allow_writes 默认为 False；WRITE 在服务调用和打开数据库事务前抛 ToolPolicyError，
+READ_ONLY 正常允许，不实现 scopes/RBAC/HITL/权限降级。context 不含可执行对象或模型可选依赖。
+
+### 服务、内置工具与事务
+
+main.py lifespan 使用同一个 application Database，通过 build_tool_registry 显式组装三个工具，
+再创建 app.state.tool_executor。没有新 HTTP 路由；健康检查与 Gateway 生命周期保持原语义。
+system_status 注入 async bool checker，实际为 Database.ready，输出仅 application/postgresql，
+没有 HTTP endpoint 耦合、主机信息、可选 URL、shell 或秘密配置。
+
+ticket_search 接受 status、limit（默认 20，1–100）和可选精确 ticket_id；不提供 priority 过滤。
+TicketService.search 使用每调用独立 Database.sessions session，正常结束关闭/回滚读事务，
+从不 commit。list/get_by_id 复用既有仓储，所有路径显式传入可信 tenant_id。
+精确 ID 结合 status 过滤；他租户/不存在 ID 统一空列表。
+
+ticket_create 输入 title（非空白、最多 300）、description（最多 10000）、priority。
+status 固定初始 open，UUID/时间戳由既有持久化实现生成。TicketService.create 持有
+Database.transaction，repository 仅 flush；TicketView 在事务内构造验证，然后事务退出提交。
+输出摘要只含 id/title/status/priority，不含私有描述、tenant ID 或 ORM 实例。
+异常、DTO 构造失败和取消会回滚未提交写入，executor 不持有事务也不提交 READ_ONLY 工具。
+服务内部 DTO 构造失败作为 execution 失败归一化；handler 返回不符声明的对象为 result_validation。
+后续新增写 handler 必须在提交前完成其业务输出验证，executor 的最终校验不能撤销已提交副作用。
+
+### Deadline、取消与重放
+
+`asyncio.timeout` 包裹 handler（包括 DB 事务退出）和输出验证；通用默认 10 秒、status 5 秒。
+使用 perf_counter 单调时钟记录整次调用 duration_ms。协作式异步 handler 必须及时 await，
+不得阻塞循环或吞 CancelledError；本层不提供进程隔离/强制终止任意 Python 的功能。
+外部 CancelledError 写取消元数据后原样传播，不转换成功/失败结果，不启动后台重试任务。
+executor deadline 到期为 timeout；handler 自己抛出的 TimeoutError 为 execution，避免误判本层期限。
+
+Executor 从不自动重试，包括 WRITE。没有 idempotency key 或分布式去重；相同 call ID 再调用
+仍会再次执行。DB commit 附近超时、取消或断连可能造成完成状态未知，即使错误也不可声称必定回滚。
+未来 Agent 应避免自动重放 WRITE，并在引入幂等协议后单独验证恢复语义。
+
+### 错误与隐私日志
+
+ToolError 派生 ToolNotFoundError、ToolInputValidationError、ToolPolicyError、ToolTimeoutError、
+ToolExecutionError、ToolResultValidationError。ToolResult 包含 tool_call_id、tool_name、success、
+data、error(category/message)、duration_ms；成功必须有 data 且无 error，失败恰好相反。
+消息使用固定词表，不转发 exception repr、Pydantic error detail、SQL、数据库 URL、密钥或 traceback。
+工具 data 不出现在 ToolResult repr。ToolCall 的名称/ID 仍在结果中用于关联，但不视为可信日志字段。
+
+沿用 JsonFormatter 事件/字段 allowlist，增加 tool_start/tool_result/tool_error、已注册 tool_name、
+tool_effect、tool_outcome、tool_error、duration_ms。request ID 取显式可信 UUID，否则继承服务端
+request_id_context；不覆盖/污染调用方 contextvar。不记录 tenant ID、call ID、未知名称、原始参数、
+工单标题/描述、输出正文、数据库异常或 Authorization/API key。取消输出 tool_error/outcome=cancelled。
+尚无 tool_execution 表、持久化 traces 或外部审计系统。
+
+### 验证与未来适配边界
+
+离线 handler 测试 registry、schema、严格校验、effect/policy、输出、固定错误、取消、期限和日志。
+真实 PostgreSQL 测试两租户 list/精确 ID 隔离、输入注入拒绝、限量/状态过滤、只读零 commit、
+拒绝写零事务、创建归属、flush 后异常/超时/取消/DTO 失败回滚、commit 失败、其他租户记录完整。
+保留原迁移、仓储隔离、LLM transport/gateway、/health、/ready 回归；无外部模型请求。
+
+Phase 4 LangGraph 只应调用 gateway 和 executor，不从 graph node 访问 repository；应限制步数、
+总时长和工具调用数，保持 trusted context，传播取消，消费分类结果并禁止自动重放 WRITE。
+RAG 层存在后才将 knowledge_search 作为新的 READ_ONLY 工具显式注册，ACL 在检索服务内执行。
+未来 MCP adapter 只做协议/认证上下文转换并复用 runtime/policy，不能绕过写策略或导入任意工具。
+LangGraph、RAG/knowledge_search、MCP、raw SQL 工具、认证、HITL UI 和持久化 tracing 均未实现。
+raw SQL 需要单独设计解析、租户约束、只读角色、表/语句白名单、期限/行数与审计，不在本阶段注册。
 
 ## 6. RAG 与摄取（未实现）
 
@@ -206,7 +297,7 @@ phase timeouts、单次 deadline、响应缓冲上限和 model pricing。key_req
 Normalized contracts 使用 Pydantic 和明确枚举：Message、ToolDefinition、ToolCall、
 ModelTarget、LLMRequest、ProviderResult、LLMResponse、Usage、CostEstimate、Attempt。
 文本及工具参数不出现在 repr；外部 wire JSON 只在 provider 内解析。
-消息角色验证工具引用字段；工具 declaration 为 JSON object schema；本阶段不验证/执行真实工具权限。
+消息角色验证工具引用字段；工具 declaration 为 JSON object schema；LLM 包不验证/执行业务工具权限，执行边界见第 5 节。
 target.model 可覆盖 profile 默认模型；target.capabilities 允许声明模型级能力，避免假定一个
 兼容 endpoint 的所有模型均支持同样功能。没有 multimodal、streaming、embeddings。
 

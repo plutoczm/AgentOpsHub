@@ -12,6 +12,9 @@ EVENTS = frozenset(
         "application_started",
         "llm_attempt",
         "llm_result",
+        "tool_start",
+        "tool_result",
+        "tool_error",
         "application_stopped",
         "database_unavailable",
         "transaction_failed",
@@ -36,6 +39,10 @@ FIELDS = (
     "llm_output_tokens",
     "llm_cost",
     "llm_currency",
+    "tool_name",
+    "tool_effect",
+    "tool_outcome",
+    "tool_error",
 )
 
 

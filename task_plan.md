@@ -1,18 +1,19 @@
-# Phase 2 plan
+# Phase 3 plan
 
-Starting SHA: 4908e8bfaa4b02de25ccb9a286dd933fb08317ce. Clean preflight verified.
-Scope: internal cloud/local-ready OpenAI-compatible LLM gateway only. No Phase 3.
+Starting SHA: cbec5b62eb0bceaee055f9a30ecc49239a66b583. Clean preflight verified.
+Scope: typed tenant-safe internal Tool Runtime only. Stop before Phase 4.
 
-- [x] Validate repository, Conda, uv, hardware and existing application boundaries.
-- [x] Publish A-S design before implementation.
-- [x] Typed contracts, provider transport, policies and lifecycle.
-- [x] Offline MockTransport matrix and secret-safety tests.
-- [x] Conda quality gates and real PostgreSQL/HTTP regression.
-- [x] Implemented-state documentation and validation evidence prepared.
-- [x] Final staged security/quality audit.
+- [x] Inspect accepted environment and Phase 1/2 boundaries; publish A-O proposal.
+- [x] Implement typed runtime, explicit registration and three built-ins.
+- [x] Add offline and real PostgreSQL safety tests.
+- [x] Update implemented-state documentation and roadmap.
+- [x] Run sync, checks, integration, hooks and Compose validation.
+- [x] Audit staged changes and prepare one Phase 3 commit.
 
-The single Phase 2 commit is the final operation; its result is recorded in Git history. No push.
+Commit is the final operation; Git history and final report record SHA and clean-status verification. No push; no Phase 4 work.
 
-Decisions: reuse locked httpx2 with no vendor SDK; explicit capabilities, safe semantic
-errors, bounded retry/fallback, optional model providers, unknown usage/cost preserved.
-No GPU dependencies, model downloads, local model process, real provider calls or proxy API.
+Decisions: existing dependencies; strict JSON input; trusted UUID context; writes denied by default; no retries; service-owned write transactions; read sessions never commit.
+
+Preflight issues: shell python resolves to WindowsApps and uv is absent from PATH; explicit accepted Conda Python and existing workspace uv verified. A read hit GBK console encoding; use Python -X utf8 for all scripts.
+
+First verification corrections: test schema fields rather than docstrings; typed casts for deliberately invalid test inputs; Ruff formatting. A shell inline edit failed quoting before execution; file-based Python edits used thereafter.
