@@ -13,6 +13,7 @@ from app.api.readiness import router as readiness_router
 from app.core.config import Settings, load_settings
 from app.core.middleware import RequestContextMiddleware
 from app.db.session import Database
+from app.llm.gateway import LLMGateway
 from app.observability.logging import configure_logging
 
 logger = logging.getLogger(__name__)
@@ -41,11 +42,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         configure_logging(resolved.log_level)
         database = Database(resolved)
         app.state.database = database
+        gateway = LLMGateway(resolved.llm)
+        app.state.llm_gateway = gateway
         logger.info("application_started")
         try:
             yield
         finally:
-            await database.close()
+            try:
+                await gateway.close()
+            finally:
+                await database.close()
             logger.info("application_stopped")
 
     docs_enabled = resolved.environment != "production"

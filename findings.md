@@ -25,3 +25,12 @@ Official reference material consulted for API/operational behavior:
   explains explicit environment targeting and exact-sync removal hazards.
 - SQLAlchemy async sessions: https://docs.sqlalchemy.org/en/20/orm/extensions/asyncio.html
 - Alembic async migration guidance: https://alembic.sqlalchemy.org/en/latest/cookbook.html
+
+## Phase 2 official references
+
+- https://pydantic.dev/docs/httpx2/advanced/transports/ — MockTransport seam.
+- https://pydantic.dev/docs/httpx2/advanced/timeouts/ — connect/read/write/pool timeouts.
+- https://api-docs.deepseek.com/ — configurable OpenAI-compatible base URL.
+- https://api-docs.deepseek.com/api/create-chat-completion/ — chat wire format.
+- https://docs.modelstudio.console.alibabacloud.com/en/model-studio/qwen-structured-output
+  — Qwen compatible API and region/workspace-specific endpoint configuration.

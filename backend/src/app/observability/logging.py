@@ -10,6 +10,8 @@ request_id_context: ContextVar[str | None] = ContextVar("request_id", default=No
 EVENTS = frozenset(
     {
         "application_started",
+        "llm_attempt",
+        "llm_result",
         "application_stopped",
         "database_unavailable",
         "transaction_failed",
@@ -17,7 +19,24 @@ EVENTS = frozenset(
         "unhandled_exception",
     }
 )
-FIELDS = ("method", "route", "status_code", "duration_ms", "error_type")
+FIELDS = (
+    "method",
+    "route",
+    "status_code",
+    "duration_ms",
+    "error_type",
+    "llm_provider",
+    "llm_model",
+    "llm_deployment",
+    "llm_sequence",
+    "llm_attempt",
+    "llm_outcome",
+    "llm_error",
+    "llm_input_tokens",
+    "llm_output_tokens",
+    "llm_cost",
+    "llm_currency",
+)
 
 
 class JsonFormatter(logging.Formatter):

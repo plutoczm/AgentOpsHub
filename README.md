@@ -2,9 +2,9 @@
 
 Enterprise AI Agent Platform — 企业技术支持后端。
 
-**已实现：Phase 0 + Phase 1（Conda workflow / persistence foundation）。**
-当前包含 FastAPI、配置/日志、PostgreSQL Tenant/Ticket 持久化、Alembic 和真实数据库测试。
-尚无业务 CRUD HTTP 接口、认证、Agent runtime、LLM Gateway、RAG、MCP 或前端。
+**已实现：Phase 0–2（后端基础、持久化、内部 cloud/local-ready LLM Gateway）。**
+当前包含 FastAPI、配置/日志、PostgreSQL Tenant/Ticket、Alembic、内部 LLM Gateway，以及离线模型测试和真实数据库测试。
+尚无业务 CRUD HTTP 接口、认证、Agent runtime、RAG、MCP、前端、本地推理运行时或持久化 LLM tracing。
 Redis/Qdrant 仍是基础设施预留，运行时仅使用 PostgreSQL。没有 benchmark 或性能声明。
 
 ## 本地 Windows 推荐环境：Conda + uv
@@ -101,7 +101,7 @@ ready 失败：`{"status":"not_ready","dependencies":{"postgresql":"unavailable"
 
 上述超时和池大小是配置值，**不是实测性能数字**。URL 使用 SQLAlchemy URL.create 转义密码。
 不记录 SQL 参数、密码、请求正文、认证头或原始异常文本；未允许的第三方日志消息会被省略。
-LLM_* 仍是未启用的未来预留项。
+Phase 0 的 LLM_* 占位变量不再用于新配置；内部 Gateway 使用 AGENTOPSHUB_LLM__... 嵌套配置。已有 .env 不会被自动改写。
 
 ## 持久化与事务
 
@@ -172,8 +172,94 @@ CI 配置保留 Windows/Linux、Python 3.12/3.13 质量矩阵；Linux job 执行
 
 AnyIO `<4.15` 兼容上限保持不变；升级 Starlette 时应凭真实测试结果重新评估。
 
+## 内部 LLM Gateway（Phase 2）
+
+`app/llm` 提供 normalized request/response、OpenAICompatibleProvider 和 LLMGateway。
+应用依赖内部合约，provider/model/endpoint 通过 profile 与逻辑 route 选择；不按 cloud/local 分支。
+DeepSeek、Qwen、generic 是配置模式，复用同一个 transport。它们已通过 MockTransport 验证，
+**本次没有调用真实云模型或本地模型，不能据此声称某个在线模型已验证兼容。**
+
+沿用 httpx2 2.12.0 AsyncClient，不引入厂商 SDK。每个启用 profile 复用一个客户端，lifespan
+退出时关闭；standalone 调用方需 await gateway.close()。只实现非流式文本 Chat Completions。
+没有 `/llm/chat`、`/completion`、`/proxy` 等未认证代理接口，也没有自动 smoke/模型探测。
+零 provider、缺少云 key、可选 localhost 服务离线均不影响启动；/ready 仍仅检查 PostgreSQL。
+
+### Profile 与路由
+
+.env.example 给出全部禁用的 DeepSeek、Qwen、generic 示例。Qwen endpoint 随账户区域/工作空间
+配置，示例 .invalid 地址必须替换；generic localhost 地址只是未来端点示例，不包含模型服务器。
+每个 profile 包含 name/kind/base_url/default_model/enabled/api_key/api_key_required/
+deployment_type/capabilities/timeout/pricing。只允许无 URL 凭据/query/fragment 的 HTTP(S) URL；
+允许 localhost、LAN 和私有域名。端点由受信任配置管理，不能直接采纳终端用户 URL。
+
+api_key 为 SecretStr，不显示在 repr；必需 key 缺失在调用时抛 ConfigurationError。
+generic 可显式设置 api_key_required=false；缺少可选 key 时不发送 Authorization，无需伪造 key。
+DeepSeek/Qwen kind 保持必需认证。重定向关闭，TLS 默认验证，环境代理不会被隐式采用。
+
+一个 Route 是有序 ModelTarget 列表；target 引用 profile，可覆盖 model 与能力声明。
+例如 cloud→cloud、local→cloud、cloud→local、local-only 都可表示，已用 mock 验证。
+route 定义也代表允许的数据转发范围；没有自动隐私分类或“本地优先”策略。
+
+### Timeout、retry 与 fallback
+
+默认 HTTP connect/read/write/pool 超时为 5/30/10/5 秒，单次总上限 45 秒，gateway 总上限
+90 秒（含重试等待与 fallback）。这些是可配置上限，不是实测延迟指标。
+整体 deadline 结束抛 LLMTimeoutError；调用方取消向下传播，不会被重试吞掉。
+
+| 错误 | 同目标重试 | 默认 fallback |
+| --- | --- | --- |
+| 连接/传输失败、超时、408、429、5xx | 有界重试 | 尝试耗尽后进入下一候选 |
+| 401 / 403 | 否 | 否；Route.fallback_on_authentication=true 才允许其他候选 |
+| 400 / 404 / 409 / 其他非暂时 HTTP 错误 | 否 | 否 |
+| 配置、能力、响应格式、结构化输出错误 | 否 | 否 |
+
+max_attempts 包含首次调用，默认 2，上限 5；指数退避默认 full jitter，最大等待可配置。
+只支持 Retry-After 的非负秒数，受 max_delay 限制；HTTP-date 格式暂忽略。
+不保证请求重试不产生额外计费，生成请求可能已在 provider 侧完成。
+所有候选按策略失败后抛 GatewayExhaustedError，携带安全 attempt history；非重试错误直接报告。
+
+### 合约、usage、费用与结构化输出
+
+Message 支持 system/user/assistant/tool 和文本；ToolDefinition/ToolCall 仅表示函数协议数据，
+不执行工具。LLMRequest 包含 messages、route 或显式 target、temperature、max_output_tokens、
+stop、JSON/结构化请求及 tools；未知字段和不合法参数会被拒绝。
+LLMResponse 返回 provider/model、部署类型、消息、finish reason、tool calls、usage、
+单次 attempt history、整体单调时钟耗时、request ID、provider request ID 和可选 cost。
+日志中的 model 使用配置目标，不信任响应中任意 model 文本。
+
+usage 缺失保持 None；仅在 input/output 都已知且 total 缺失时相加，provider 提供的 total 保留。
+ModelPricing 使用 Decimal、币种及可选 effective_date，输入/输出分别按百万 token 单价计算。
+没有内置厂商价目表。缺少价格或任一必要计数时 cost=None；本地模型也不默认免费。
+费用只估计成功响应，失败尝试的计费未知，不是整次调用账单。
+
+capabilities 明确声明 tool_calling/json_mode/structured_output，默认全部 false。
+结构化请求优先使用 native json_schema；只有 json_mode 时发送 JSON mode 和 schema 指令。
+两种能力均未声明则明确失败。`generate_structured(request=..., response_model=...)` 最终始终
+执行严格 JSON 语法与 Pydantic v2 校验；NaN/Infinity、非法 JSON、schema 不匹配或截断响应
+抛 StructuredOutputError，不自动重新生成。attempt history 的 success 表示 HTTP/协议成功，
+不代表随后的应用 schema 校验一定成功。
+
+日志只增加 llm_attempt/llm_result 固定事件和允许元数据；prompt、响应正文、API key、
+Authorization、原始错误正文默认不记录。兼容请求 ID context，独立使用无需 HTTP 请求。
+provider 响应缓冲有上限；工具参数仍是不可信数据，未来执行者须验证和授权。
+
+### 验证与明确边界
+
+```powershell
+conda run -n agentopshub python -m pytest backend/tests/llm -q
+conda run -n agentopshub python scripts/dev.py check
+conda run -n agentopshub python scripts/dev.py test-integration
+```
+
+LLM 测试阻止默认网络 transport，使用 MockTransport 经过真实序列化/HTTP/解析代码；
+退避 sleep 和随机数可注入，测试不真实等待重试间隔。deadline 测试只等待短事件循环定时器。
+全套验收保留真实 PostgreSQL 回归；无需模型 key、互联网模型服务、GPU 或本地模型服务器。
+
+没有安装 CUDA/ML 框架或下载权重。Local endpoint 支持不等于本地运行时管理；
+Agent、LangGraph、RAG、MCP、embedding、持久化 LLM tracing 均未实现。
+
 ## 设计与 License
 
 [ARCHITECTURE.md](ARCHITECTURE.md) 区分现有实现与未来设计；
-[ROADMAP.md](ROADMAP.md) 记录阶段状态。Phase 2 尚未开始。
+[ROADMAP.md](ROADMAP.md) 记录阶段状态。Phase 2 已实现；Phase 3 尚未开始。
 MIT，见 [LICENSE](LICENSE)。

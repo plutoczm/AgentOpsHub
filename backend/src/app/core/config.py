@@ -6,6 +6,8 @@ from typing import Literal
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.llm.config import GatewayConfig
+
 
 class Settings(BaseSettings):
     """Read prefixed environment variables and an optional UTF-8 dotenv file.
@@ -16,6 +18,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="AGENTOPSHUB_",
+        env_nested_delimiter="__",
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
@@ -23,6 +26,8 @@ class Settings(BaseSettings):
         populate_by_name=True,
         hide_input_in_errors=True,
     )
+
+    llm: GatewayConfig = Field(default_factory=GatewayConfig)
 
     app_name: str = Field(default="AgentOpsHub", min_length=1, max_length=100)
     environment: Literal["development", "test", "production"] = "development"

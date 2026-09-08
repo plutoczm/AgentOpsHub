@@ -4,7 +4,7 @@ Enterprise AI Agent Platform — 企业技术支持 / IT Support 场景。
 
 ## 1. 状态与边界
 
-当前已实现 **Phase 0 + Phase 1: Conda Environment & Persistence Foundation**。本文区分现有实现与目标设计；
+当前实现范围为 **Phase 0–2：Bootstrap、Conda/Persistence、内部 LLM Gateway**。本文区分现有实现与目标设计；
 设计中的模块、表、接口和保障不代表已实现。项目是 production-oriented 原型，
 已实现 Tenant/Ticket 持久化，尚不具备认证、真实 Agent 或生产部署能力。
 
@@ -40,7 +40,7 @@ flowchart TD
     Eval --> Graph
 ```
 
-图为目标架构。当前 API 提供 /health 与 PostgreSQL /ready；Tenant/Ticket 持久化通过内部 repository 使用，尚无业务 HTTP 路由或模型连接。
+图为目标架构。当前 API 提供 /health 与 PostgreSQL /ready；Tenant/Ticket 持久化通过内部 repository 使用，尚无业务 HTTP 路由；内部 Gateway 的模型连接通过离线 transport 验证，未实际调用模型。
 
 ## 3. 当前实现
 
@@ -122,7 +122,7 @@ Redis/Qdrant 不参与应用 readiness。SELECT 1 不代表 schema 已迁移，�
 测试容器，验证 /ready 503 与 /health 200。finally 清理仅由本次创建的资源。
 运行原始结果保存在忽略的 .artifacts；progress.md 记录真实摘要，不将测试耗时作为性能结论。
 
-未实现：Agent runtime、LLM Gateway、RAG、MCP、认证、frontend、Redis/Qdrant 业务逻辑。
+Phase 1 之后新增的 Gateway 见第 7 节；Agent runtime、RAG、MCP、认证、frontend、Redis/Qdrant 业务逻辑仍未实现。
 
 ## 4. 目标 Agent 工作流（未实现）
 
@@ -183,19 +183,77 @@ BM25 初期为可重建、按租户/知识库隔离的词法索引接口，具�
 RRF 合并排名，禁止直接相加未经标定的 BM25/向量分数。reranker 为可选接口，初期可用远程
 provider 或轻量 CPU 路径；不自动下载大模型。generation 提供来源和不足信息时的拒答。
 
-## 7. Model gateway（未实现）
+## 7. LLM Gateway（Phase 2 已实现，未连接真实模型）
 
-定义自有 typed request/response/protocol，适配 OpenAI-compatible chat 与 embeddings API。
-DeepSeek、Qwen 和其他 provider 通过配置切换。compatible 不表示功能相同：适配器声明
-tool calling、structured output、streaming、embedding 能力，不支持的功能应明确报错。
-reranking 如无统一兼容端点，也必须经过同一 gateway 中的独立协议适配器。
+业务 → LLMRequest / LLMGateway → LLMProvider Protocol → OpenAICompatibleProvider →
+配置的 HTTP endpoint。kind=deepseek/qwen/generic 只是 profile 信息，不产生复制的 vendor 类。
+cloud/local/private 仅为部署元数据；route 的有序候选决定跨 provider 行为，无 local/cloud if 分支。
+generic 接受 localhost、LAN、私有域名和 HTTPS 云地址；URL 不允许嵌入凭据/query/fragment。
+不存在本地运行时 subprocess、权重下载或启动探测；配置只描述已由操作者管理的兼容服务。
 
-请求设置总 deadline 和单次 timeout。仅对可重试传输失败、429、特定 5xx 使用有界退避
-与 jitter，并尊重 Retry-After；鉴权错误、schema 错误不得盲目重试。fallback 有显式允许列表、
-能力检查和总预算；数据驻留策略可能禁止跨 provider fallback。流式输出后不得悄悄拼接另一个模型。
-限流和并发限制区分 tenant/provider；token accounting 使用 provider usage，缺失则标记估算。
-成本使用带生效日期和币种的配置价目表，未配置价格显示 unknown，不能显示成免费。
-API key 使用 SecretStr/密钥管理适配器，只在发送认证头时解包。
+选择既有锁定的 httpx2.AsyncClient（HTTPX 系列的直接客户端）而非厂商 SDK，便于注入
+MockTransport、控制重试/超时、复用连接并保持依赖体积小。每个启用 profile 一个客户端，
+对象创建不发请求，所有客户端由 gateway.close()/应用 lifespan 关闭。TLS 默认验证，
+不自动跟随重定向，不隐式继承系统代理；standalone 调用方承担 close 责任。
+没有公开 LLM proxy endpoint，也没有 invocation 数据库表。
+
+Settings.llm 接收 GatewayConfig；AGENTOPSHUB_LLM__... 配置可嵌套到 profiles/routes。
+profile 声明默认模型、enabled、SecretStr key、key_required、deployment、capabilities、
+phase timeouts、单次 deadline、响应缓冲上限和 model pricing。key_required 的判断与部署位置
+解耦；命名 DeepSeek/Qwen 配置要求认证，generic 可选择无 key。缺 key 在调用时明确失败，
+不阻塞无模型应用启动。LLM 不参与 /ready；其语义仍是 PostgreSQL SELECT 1。
+
+Normalized contracts 使用 Pydantic 和明确枚举：Message、ToolDefinition、ToolCall、
+ModelTarget、LLMRequest、ProviderResult、LLMResponse、Usage、CostEstimate、Attempt。
+文本及工具参数不出现在 repr；外部 wire JSON 只在 provider 内解析。
+消息角色验证工具引用字段；工具 declaration 为 JSON object schema；本阶段不验证/执行真实工具权限。
+target.model 可覆盖 profile 默认模型；target.capabilities 允许声明模型级能力，避免假定一个
+兼容 endpoint 的所有模型均支持同样功能。没有 multimodal、streaming、embeddings。
+
+HTTP 分别限制 connect/read/write/pool；asyncio.timeout 限制整个单次尝试，以及包含退避、
+全部候选的 gateway 总 deadline。计时使用可注入 monotonic/perf_counter；wall time 不用于
+延迟相减。调用方取消不重试；整体 deadline 中止时保留已完成/被取消 attempt 元数据。
+
+重试矩阵：连接/传输错误、timeout、HTTP 408、429、5xx 可重试；400、401、403、404、409、
+其他非暂时 HTTP 错误不重试。配置、能力、响应格式、structured validation 错误直接报告。
+重试 attempt 上限含首次调用，指数退避 capped full jitter；sleep/random 可注入。
+Retry-After 仅支持有限非负秒数且受 max_delay 限制，暂不解析 HTTP-date。
+没有 SDK 内部重试，因此没有隐藏的双重重试层。重试可能再次消耗 provider 费用。
+
+fallback 按 route 顺序逐个执行，每个候选先用尽有界重试。默认仅临时错误可进入下一候选；
+401/403 默认立即报告 AuthenticationError，只有 route.fallback_on_authentication=true 才
+允许转到其他候选，绝不重试同一认证失败目标。配置错误不会被 fallback 悄悄掩盖。
+route 是允许的数据传递边界，local→cloud 必须显式配置，不存在自动隐私推断。
+所有 eligible candidates 失败抛 GatewayExhaustedError；attempts 记录 sequence、provider、
+model、deployment、target 内 attempt number、outcome、语义错误类别、安全 HTTP status、
+单调时钟 latency、retryable。不含 URL、headers、prompt 或模型正文。
+
+usage 只采用 provider 计数；缺失保留 None，仅在两个分量均存在时推导缺失 total。
+cost = input_tokens / 1_000_000 * input_per_million + output_tokens / 1_000_000 * output_per_million，
+使用 Decimal 和配置币种，可记录 price effective_date。没有价格或完整计数时 unknown，
+包括本地模型；仅估算成功响应，失败尝试和整次调用的完整账单仍未知。
+没有动态路由、Redis 限流、预算预留或持久化费用账本，均不在 Phase 2 范围。
+
+能力模型仅 tool_calling/json_mode/structured_output，默认 false。结构化输出优先 native
+json_schema，或在 json_mode 下附带 schema 指令；无声明支持则 UnsupportedCapabilityError。
+最终严格拒绝非法 JSON（包括 NaN/Infinity），再使用 response_model.model_validate_json(strict=True)。
+格式/schema/截断错误为 StructuredOutputError，不 eval、不自动修复或重生成。
+结构化校验在 HTTP normalization 成功后进行，因此 error.attempts 可包含 HTTP success。
+
+既有 JsonFormatter allowlist 增加 llm_attempt/llm_result，记录目标身份、序号、耗时、
+错误类别、计数和估计费用；不记录默认 payload/header/原始异常。模型标签使用配置值，
+provider request ID 经过格式与 key 排除检查；HTTP request UUID context 可继承或显式传入。
+所有 transport 失败映射固定语义异常并抑制原始异常展示。生成文本不出现在 repr。
+
+验证：MockTransport 经过真实 adapter HTTP 路径，阻止默认模型网络 transport；覆盖云/私有/
+localhost、认证可选性、重试与有序 fallback、deadline/cancellation、解析、结构化和泄漏测试。
+没有真实云/API/local inference 测试或 GPU benchmark；profile 兼容性不能被解读为任何实时
+厂商模型已验证支持全部声明特性。Qwen 的 region/workspace URL 必须来自实际账户配置。
+
+开发机检测 RTX 5060 Ti，nvidia-smi 报告 8151 MiB 专用 framebuffer，系统约 16 GB RAM；
+不把 Windows shared GPU memory 当作额外专用 VRAM。当前 cloud API 优先，不依赖本地推理。
+后续本地阶段以较小量化模型为候选，实际可用规模由 VRAM/质量/延迟测量决定；
+不在此宣称支持模型大小、tokens/sec、TTFT 或最大上下文。
 
 ## 8. 后续数据与安全设计（除 Phase 1 模型外未实现）
 

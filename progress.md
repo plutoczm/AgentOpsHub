@@ -156,3 +156,101 @@ trigger bodies. Conda inexact sync retains extra packages and requires review on
 - One Phase 1 commit is prepared with message
   `feat: add conda workflow and async persistence foundation`; no remote push.
   The commit SHA and final clean status are verified through Git after committing.
+
+## Phase 2 preflight
+
+- Accepted HEAD 4908e8bfaa4b02de25ccb9a286dd933fb08317ce; working tree clean.
+- Conda 25.11.1, agentopshub Python 3.12.14, uv 0.12.10.
+- sys.executable: D:/Anaconda3/envs/agentopshub/python.exe;
+  sys.prefix: D:/Anaconda3/envs/agentopshub (observed evidence, not configuration).
+- nvidia-smi: NVIDIA GeForce RTX 5060 Ti, 8151 MiB reported GPU framebuffer memory.
+  Windows reported 16227565568 bytes system RAM. No shared GPU memory counted as VRAM.
+- Read-only request-section extraction initially used a missing substring; corrected
+  the extraction before implementing. No project state was changed by that failed read.
+- Existing locked httpx2 2.12.0 offers AsyncClient and MockTransport; use it directly.
+- Published A-S proposal; all model tests will use injected offline transports.
+
+- Initial gateway contracts/adapter/orchestration added; no network/model calls.
+- Moved existing httpx2 2.12.0 from dev to runtime dependencies; lock still has 49 packages.
+- First offline LLM run: 102 passed. Tests exercise real adapter serialization and parsing.
+- Strict typing caught JSON container invariance and fixed-vocabulary narrowing;
+  resolved with typed containers/Literal signatures, without disabling checks.
+- Test helpers initially had inconsistent absolute package names; switched to relative imports.
+- Hardened strict JSON syntax against NaN/Infinity and ensured every transport close is awaited.
+
+- Hardened tests initially exposed a missing RetryPolicy test import (105 passed,
+  one failed); corrected the import. Final focused run: 106 offline LLM tests passed.
+- Ruff lint/format and strict mypy (55 Python files) passed after fixes.
+- Profile examples are disabled by default; Qwen URL/model placeholders are explicitly
+  not working credentials/targets. Existing local .env was not modified.
+
+## Phase 2 final validation evidence
+
+Starting SHA: 4908e8bfaa4b02de25ccb9a286dd933fb08317ce.
+Runtime: Conda agentopshub, Python 3.12.14, uv 0.12.10, Conda 25.11.1.
+Actual executable: `D:\Anaconda3\envs\agentopshub\python.exe`; prefix: `D:\Anaconda3\envs\agentopshub` (evidence only).
+CPU probe: AMD Ryzen 5 9600X, 6 cores / 12 logical processors.
+GPU probe: RTX 5060 Ti, 8151 MiB reported dedicated framebuffer; no shared VRAM counted.
+System memory probe: 16227565568 bytes. Hardware is context, not a runtime dependency.
+
+- Added no new dependency distribution and upgraded none: all 49 lock package/version
+  pairs match Phase 1. Existing httpx2 2.12.0 moved from dev to runtime dependencies.
+- Conda sync passed; sync-check explicitly targeted the dedicated prefix and reported
+  "Would make no changes". Legacy .venv remains absent.
+- Before the last two focused boundary cases, `python scripts/dev.py check` passed:
+  139 passed, 35 integration skips without PG context; Ruff/format/mypy passed.
+- Final focused LLM run after decoding/schema preflight cases: **108 passed**.
+- Final full `conda run --no-capture-output -n agentopshub python scripts/dev.py
+  test-integration`: **176 passed in 12.77s**, no skips. This is test execution time,
+  not LLM latency or throughput evidence.
+- Final full application branch-aware coverage: 98% rendered,
+  98.0788675429727% raw; 841 statements,
+  10 missing statements; 148 branches,
+  139 covered branches, 7 partial branches.
+  No coverage exclusions or quality rules were weakened.
+- Ruff check and format checks passed; strict mypy passed for 55 Python files.
+- Development Compose config passed. The isolated PostgreSQL Compose instance started,
+  passed all 35 integration cases and was cleaned after the run.
+- Alembic upgrade/current/downgrade/re-upgrade/check passed unchanged (20260908_01 head).
+- Actual HTTP regression: /health=200 and /ready=200 with DB up; after stopping the
+  run-owned DB, /ready=503 and /health=200. No LLM availability check was added.
+- .env.example was parsed through Settings: three disabled profiles, no keys,
+  high-quality/private-local routes. Existing .env was not overwritten.
+
+Evidence files copied to .artifacts/phase2-pytest.txt, phase2-coverage.json,
+phase2-migrations.json, phase2-http.json, phase2-http.log. The inherited PG runner
+still emits phase1-named temporary files; these are ignored, not committed reports.
+
+LLM coverage includes actual request serialization, HTTP status/transport classification,
+key-required/optional behavior, generic localhost/private URLs, cloud/local candidate order,
+bounded retry and injected backoff, authentication fallback opt-in, attempt order/metadata,
+per-attempt/overall deadline and caller cancellation, reusable client cleanup, usage unknowns,
+Decimal synthetic prices, structured JSON/schema/NaN rejection, tool wire data and leakage checks.
+The adapter has no vendor SDK retry layer and makes exactly one HTTP attempt per call.
+Missing configuration/capabilities fail before transport; exhausted transient routes retain history.
+
+All LLM tests use MockTransport with the default model network transport blocked.
+There were **no real cloud LLM API calls**, **no local model servers started**,
+**no model weights downloaded**, and **no GPU/ML frameworks installed**.
+No GPU or LLM benchmark was performed. HTTP metadata timings use monotonic clocks;
+the synthetic clock tests are not performance claims.
+
+Known limits: non-streaming text Chat Completions only; no Agent/LangGraph/RAG/MCP,
+embedding, public model proxy, model runtime, persistent traces or distributed rate limiter.
+Real vendor compatibility and region-specific Qwen URLs have not been acceptance-tested.
+Capability support is declared configuration, not runtime discovery. Structured schemas
+must be objects. Retry-After HTTP-date is not parsed; numeric delays are capped.
+Only successful-response cost is estimated; failed-attempt/whole-call billing is unknown.
+AnyIO <4.15 remains. Remote CI was not run because no push is requested.
+Final commit identity is recorded by Git (`git rev-parse HEAD`) and in the final report;
+embedding a commit's own SHA in its tracked content would change that SHA.
+
+- Coverage's existing default rules exclude six Protocol declaration/docstring/ellipsis
+  lines in llm/protocols.py. No custom exclusion or no-cover pragma was added.
+- Final staged pre-commit: Ruff lint, format check, strict mypy and credential guard passed.
+- Reviewed 31 staged files; local .env credential values are absent. No model weights,
+  real provider dumps, environments, binaries, logs or coverage artifacts are staged.
+- git diff --check and git diff --cached --check passed. Conda interpreter and httpx2
+  package location reverified; .venv remains absent; temporary test containers cleaned.
+- Prepared one commit: `feat: add cloud and local-ready llm gateway`; no remote push.
+  Git history/final report record the final SHA and post-commit clean status.

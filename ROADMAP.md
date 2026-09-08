@@ -1,13 +1,13 @@
 # AgentOpsHub Roadmap
 
 每阶段独立验收、小步提交。本文为计划，不将未来能力描述为已完成。
-Phase 0 和 Phase 1 已完成；Phase 2 尚未开始，不会自动进入下一阶段。
+Phase 0/1 已接受；Phase 2 实现和本地验收均完成。Phase 3 尚未开始。
 
 | 阶段 | 目标 | 可验证的退出条件 |
 | --- | --- | --- |
 | Phase 0 ✅ | 架构与 bootstrap | 最小 API、配置/日志、测试、uv lock、质量工具、Compose、Windows 文档、初始提交 |
 | Phase 1 ✅ | Conda 环境与持久化基础 | 专用 Conda + uv、SQLAlchemy/Alembic、Tenant/Ticket repository、事务与租户条件、/ready、真实 PG 迁移/隔离/回滚测试 |
-| Phase 2 | Model gateway | OpenAI-compatible 协议、mock transport 测试、timeout/retry/fallback、usage/cost unknown 语义和预算 |
+| Phase 2 ✅ | Cloud/local-ready LLM gateway | OpenAI-compatible 协议、mock transport 测试、timeout/retry/fallback、usage/cost unknown 语义和预算 |
 | Phase 3 | 文档摄取与 dense RAG | 文档状态机、解析/语义分块、embedding adapter、Qdrant adapter、幂等摄取/删除与引用 |
 | Phase 4 | Hybrid retrieval 与评测基线 | BM25、RRF、独立 evaluation package、人工审核 relevance labels、Recall/MRR/Hit Rate 与原始运行产物 |
 | Phase 5 | Stateful Agent | LangGraph、intent/planning/tool/reflection、对话与 memory、五个工具、执行预算、持久化 checkpoint |
@@ -31,15 +31,15 @@ Phase 5 在 Phase 6 完成审批之前必须拒绝未经批准的有副作用工
 - 初始 README 只列当前实现；没有未经运行的性能或质量数字。
 - MIT LICENSE、敏感文件检查、初始 Git commit。
 
-## Phase 1 已完成与下一阶段建议
+## 已完成基础与后续边界
 
 已完成 Conda 迁移和旧 .venv 退役、事务/连接池生命周期、Tenant/Ticket、租户查询边界、
 确定命名约束、Alembic 初始迁移与往返、PostgreSQL readiness、隔离真实数据库测试。
 没有实现认证或 HTTP 工单 CRUD；传入 tenant_id 由调用方负责可信性，尚无 RLS。
 
-Phase 2 建议仅实现自有模型协议与 OpenAI-compatible gateway 的 transport mock 测试，
-先验证 timeout/retry/fallback 和 usage/cost unknown 语义，再按显式预算启用真实 provider 验证。
-不在 Phase 2 同时堆叠 LangGraph、RAG 或 MCP。本次没有开始任何 LLM 功能。
+Phase 2 已实现自有模型协议与 OpenAI-compatible gateway 的 transport mock 测试，
+已验证 timeout/retry/fallback 和 usage/cost unknown 语义；真实 provider 验证仍需后续显式预算。
+不在 Phase 2 同时堆叠 LangGraph、RAG 或 MCP。Phase 2 已按上述边界实现 Gateway；没有开始 Agent、LangGraph 或 RAG。
 
 ## 实验与提交规则
 
@@ -47,3 +47,12 @@ Phase 2 建议仅实现自有模型协议与 OpenAI-compatible gateway 的 trans
 付费模型集成测试需显式启用并配置预算；CI 默认无 key、离线 mock transport。
 每次提交先通过相关测试和 staged review，禁止提交 .env、凭据、企业原始文档和本地存储。
 uv.lock 与依赖声明一同提交；README 数字必须引用公开可复现的命令及运行产物。
+
+## 后续独立阶段：Local Model Runtime（未开始）
+
+面向 RTX 5060 Ti 8 GB 的后续可选实验：小型量化模型、Ollama/llama.cpp 候选路径，
+可选受支持服务器上的 vLLM；通过相同 generic OpenAI-compatible profile 接入。
+届时真实测量 VRAM、TTFT、tokens/sec、端到端延迟，以及 cloud/local 质量、费用和隐私取舍。
+当前不安装上述运行时，不下载权重，不宣称模型大小或性能支持。
+
+Phase 3 建议聚焦文档摄取/分块、embedding 适配和 Qdrant dense retrieval 的小型可验证链路；本次未开始。
