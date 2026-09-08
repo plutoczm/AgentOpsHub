@@ -4,9 +4,9 @@ Enterprise AI Agent Platform — 企业技术支持 / IT Support 场景。
 
 ## 1. 状态与边界
 
-当前仅实现 **Phase 0: Architecture & Bootstrap**。本文区分现有实现与目标设计；
+当前已实现 **Phase 0 + Phase 1: Conda Environment & Persistence Foundation**。本文区分现有实现与目标设计；
 设计中的模块、表、接口和保障不代表已实现。项目是 production-oriented 原型，
-尚不具备认证、持久化、真实 Agent 或生产部署能力。
+已实现 Tenant/Ticket 持久化，尚不具备认证、真实 Agent 或生产部署能力。
 
 约束：原创实现，不复制已有项目代码；Windows 11 + Docker Desktop；Python 3.12+；
 16 GB RAM 开发机不强依赖本地大型模型；所有模型访问经 OpenAI-compatible abstraction；
@@ -40,7 +40,7 @@ flowchart TD
     Eval --> Graph
 ```
 
-图为目标架构。当前 API 仅提供 /health，尚未连接图中的存储或模型。
+图为目标架构。当前 API 提供 /health 与 PostgreSQL /ready；Tenant/Ticket 持久化通过内部 repository 使用，尚无业务 HTTP 路由或模型连接。
 
 ## 3. 当前实现
 
@@ -54,6 +54,75 @@ flowchart TD
   未知第三方日志转为通用 log 事件；排障信息有限是目前明确的取舍。
 - 500 响应不泄漏异常文本，使用 request_id 关联日志；请求上下文在 finally 中清理。
 - uv、pytest、Ruff、strict mypy、pre-commit、跨平台脚本和 CI 工作流配置。
+
+## 3a. Phase 1 本地运行时与持久化（已实现）
+
+Conda 环境 agentopshub 提供 Python 3.12；environment.yml 仅声明运行时。
+依赖由 pyproject.toml + uv.lock 唯一管理。uv 0.12.10 的 dry-run 和实际安装均验证了
+UV_PROJECT_ENVIRONMENT=sys.prefix 配合 --locked --inexact --python=sys.executable
+--no-python-downloads 会安装到当前 Conda 环境。--inexact 保留 Conda 引导包，
+不会清除锁外残留；依赖移除时需要单独审查。禁止向 base 或系统 Python 同步。
+scripts/dev.py 通过当前解释器 -m 调用工具，避免裸 uv run 重新选择 .venv。
+旧 .venv 在完整 Phase 0 回归、解释器/包路径和 HTTP 启动验证后移除。
+CI 继续使用标准 Python + uv 临时虚拟环境，不依赖 Conda，不写绝对安装路径。
+
+```text
+FastAPI lifespan → Database → one AsyncEngine + async_sessionmaker
+request/service → Database.transaction() → AsyncSession.begin()
+→ TenantRepository / TicketRepository → PostgreSQL
+```
+
+Settings 复用 POSTGRES_* aliases，password 是 SecretStr，URL.create 负责安全转义。
+缺失密码时 engine 不配置，/health 可用而 /ready 返回 503；配置错误仍启动失败。
+创建 engine 不建立连接；连接池只在实际操作时访问 PostgreSQL。pool_pre_ping 检测过期连接，
+pool checkout/connect/command timeout 与 readiness 总 deadline 均有显式上限。
+关闭 lifespan 时 await engine.dispose()，不是每个请求创建 engine。
+
+事务采用简单服务/请求边界：Database.transaction 使用 async_sessionmaker.begin，正常退出提交，
+异常回滚并关闭 session；SQLAlchemy 异常只记录类型后传播，不在 repository 中吞掉约束错误。
+Repository create 仅 flush；更新/删除在当前事务内执行，不调用 commit。
+TransactionSession 是 FastAPI function-scoped dependency，响应发送前完成事务退出；
+同一个 AsyncSession 不得被并发任务共享。未引入额外 Unit of Work 类。
+
+| 模型 | 字段及约束 |
+| --- | --- |
+| tenants | UUID PK；slug VARCHAR(100) UNIQUE NOT NULL；name VARCHAR(200) NOT NULL；非空白检查；created_at/updated_at TIMESTAMPTZ |
+| tickets | UUID PK；tenant_id NOT NULL FK tenants ON DELETE RESTRICT；title VARCHAR(300) NOT NULL 非空白；description TEXT NOT NULL 默认空串；status/priority；两个 TIMESTAMPTZ |
+
+UUID 由 Python uuid4 在 INSERT 时提供，不依赖数据库扩展；原始 SQL 插入需显式给出 UUID。
+created_at/updated_at 默认数据库 CURRENT_TIMESTAMP；BEFORE UPDATE trigger 使用 clock_timestamp()
+维护 updated_at，覆盖 ORM 和直接 SQL 更新。模型使用 server_onupdate/eager_defaults 读取返回值。
+tenant slug 区分大小写；本阶段不添加业务 slug 规范化或状态转换策略。
+
+TicketStatus/TicketPriority 是 Python StrEnum，SQLAlchemy Enum(native_enum=False,
+create_constraint=True, validate_strings=True) 保存 enum.value；PostgreSQL VARCHAR + CHECK
+阻止直接 SQL 写入未知值。值域是 open/in_progress/resolved/closed 与 low/medium/high/critical。
+此策略没有 PostgreSQL enum TYPE 的创建/删除生命周期，降级更直接，存储更可移植；
+未来新增/删除枚举值仍需显式约束迁移，删除值前必须迁移已有数据。
+
+Metadata 为 PK/FK/UQ/IX/CHECK 设置确定命名；Ticket 有 ix_tickets_tenant_id 和
+ix_tickets_tenant_id_status。外键 RESTRICT 避免删除租户时默默丢失工单。
+TicketRepository 不存在 get(ticket_id)；每个读/改/删 SQL 同时过滤 tenant_id 和 ticket_id，
+列表过滤 tenant_id 并限制分页；create 强制设置 tenant_id。更新 API 不允许改变归属。
+隔离测试先加载 B 的对象到 identity map，再证明 A 不能读取、修改或删除，并用新 session
+确认 B 的记录未改变。它是应用级隔离，不是认证授权或 RLS；调用者仍须提供可信租户上下文。
+
+Alembic revision 20260908_01 原创定义表、约束、索引、时间戳触发器；启动不执行 create_all。
+env.py 使用 Settings + AsyncEngine/NullPool，run_sync 进入 Alembic 同步操作并 finally dispose。
+离线 SQL 不需要凭据。upgrade/current/downgrade/re-upgrade 与 alembic check 已在空测试库验证。
+Alembic check 不自动检测 trigger body 漂移，触发器语义由实际 SQL 测试验证。
+
+/health 保持进程 liveness 与既有响应契约。/ready 用 SELECT 1 检查 PostgreSQL，
+成功 200，超时/连接失败/未配置 503；返回固定 status/dependencies，不泄漏连接细节。
+Redis/Qdrant 不参与应用 readiness。SELECT 1 不代表 schema 已迁移，发布流程必须单独检查迁移。
+
+集成入口创建唯一 Compose project 和 agentopshub_test_<随机 run ID> 数据库，使用随机密码、
+回环临时端口、tmpfs，不采用开发 DSN。fixture 校验命名，独占串行清理测试表，允许真实事务提交。
+迁移往返与约束/回滚/跨租户测试使用真实 PostgreSQL；之后实际启动 Uvicorn，并停止同一 run-owned
+测试容器，验证 /ready 503 与 /health 200。finally 清理仅由本次创建的资源。
+运行原始结果保存在忽略的 .artifacts；progress.md 记录真实摘要，不将测试耗时作为性能结论。
+
+未实现：Agent runtime、LLM Gateway、RAG、MCP、认证、frontend、Redis/Qdrant 业务逻辑。
 
 ## 4. 目标 Agent 工作流（未实现）
 
@@ -128,11 +197,11 @@ reranking 如无统一兼容端点，也必须经过同一 gateway 中的独立�
 成本使用带生效日期和币种的配置价目表，未配置价格显示 unknown，不能显示成免费。
 API key 使用 SecretStr/密钥管理适配器，只在发送认证头时解包。
 
-## 8. 数据与安全设计（未实现）
+## 8. 后续数据与安全设计（除 Phase 1 模型外未实现）
 
 PostgreSQL 预计保存 tenants、users、knowledge_bases、documents、chunks、ingestion_jobs、
 conversations、messages、agent_runs、tool_calls、approvals、tickets、usage_events、audit_events。
-SQLAlchemy 2 async sessions 按业务事务管理，Alembic 为 schema 变更入口。
+其中 Tenant/Ticket、SQLAlchemy 2 async sessions、Alembic 已在 Phase 1 落地；其他数据模型仍为规划。
 tenant_id 不由模型或请求体任意指定；来自已验证身份，并贯穿 repository、检索过滤、缓存 key。
 后续验证 RLS 作为纵深防御，RBAC/ACL 测试覆盖跨租户拒绝路径。
 
@@ -163,7 +232,7 @@ latency 报告样本数量及分位数的定义，失败样本保留；README �
 
 ## 10. 本地与生产边界
 
-Phase 0 API 在 Windows 主机运行；Compose 仅管理开发 PostgreSQL/Redis/Qdrant。
+当前 API 在 Windows 主机的 Conda 环境运行；Compose 仅管理开发 PostgreSQL/Redis/Qdrant。
 服务绑定 127.0.0.1，named volumes 位于 Docker Linux 存储，避免 Qdrant Windows bind mount 问题。
 内存上限总计 2 GiB，属于配置值，**不是实测占用**；还需计算 Docker VM、OS、IDE、Python 开销。
 不要求 GPU 或 LLM key。Qdrant readiness 由 Python host probe 检查，无 curl/wget 镜像假设。

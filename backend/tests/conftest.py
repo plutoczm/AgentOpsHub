@@ -12,7 +12,7 @@ def clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     import os
 
     for name in os.environ:
-        if name.startswith("AGENTOPSHUB_"):
+        if name.startswith(("AGENTOPSHUB_", "POSTGRES_")):
             monkeypatch.delenv(name)
 
 

@@ -1,3 +1,3 @@
 # repositories
 
-Reserved: Tenant-scoped persistence interfaces and adapters. No implementation in Phase 0.
+TenantRepository and TicketRepository are implemented. Transactions belong to the caller; every ticket query includes its tenant.

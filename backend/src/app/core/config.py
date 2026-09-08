@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     """Read prefixed environment variables and an optional UTF-8 dotenv file.
 
     Precedence is explicit constructor values, environment, dotenv, defaults.
-    Infrastructure and model settings will be introduced with their adapters.
+    POSTGRES_* aliases are shared with Compose; secrets never appear in repr.
     """
 
     model_config = SettingsConfigDict(
@@ -20,6 +20,7 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
         frozen=True,
+        populate_by_name=True,
         hide_input_in_errors=True,
     )
 
@@ -28,6 +29,23 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     host: str = Field(default="127.0.0.1", min_length=1)
     port: int = Field(default=8000, ge=1, le=65535)
+    database_host: str = Field(default="127.0.0.1", validation_alias="POSTGRES_HOST", min_length=1)
+    database_port: int = Field(default=5432, validation_alias="POSTGRES_PORT", ge=1, le=65535)
+    database_name: str = Field(default="agentopshub", validation_alias="POSTGRES_DB", min_length=1)
+    database_user: str = Field(
+        default="agentopshub", validation_alias="POSTGRES_USER", min_length=1
+    )
+    database_password: SecretStr | None = Field(default=None, validation_alias="POSTGRES_PASSWORD")
+    database_pool_size: int = Field(default=5, ge=1, le=20)
+    database_connect_timeout: float = Field(default=3.0, gt=0, le=30)
+    database_command_timeout: float = Field(default=5.0, gt=0, le=60)
+    database_ready_timeout: float = Field(default=2.0, gt=0, le=10)
+
+    @field_validator("database_password", mode="before")
+    @classmethod
+    def empty_password_is_unconfigured(cls, value: object) -> object:
+        """Allow an empty example environment while keeping liveness independent."""
+        return None if value == "" else value
 
 
 def load_settings(env_file: Path | None = Path(".env")) -> Settings:

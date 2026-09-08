@@ -9,8 +9,10 @@ from fastapi.responses import JSONResponse
 
 from app import __version__
 from app.api.health import router
+from app.api.readiness import router as readiness_router
 from app.core.config import Settings, load_settings
 from app.core.middleware import RequestContextMiddleware
+from app.db.session import Database
 from app.observability.logging import configure_logging
 
 logger = logging.getLogger(__name__)
@@ -37,10 +39,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         configure_logging(resolved.log_level)
+        database = Database(resolved)
+        app.state.database = database
         logger.info("application_started")
         try:
             yield
         finally:
+            await database.close()
             logger.info("application_stopped")
 
     docs_enabled = resolved.environment != "production"
@@ -56,4 +61,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(RequestContextMiddleware)
     app.add_exception_handler(Exception, unhandled_exception)
     app.include_router(router)
+    app.include_router(readiness_router)
     return app

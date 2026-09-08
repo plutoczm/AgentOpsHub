@@ -37,5 +37,6 @@ jobs:
       - run: uv sync --locked
       - run: uv run --locked python scripts/dev.py init-env
       - run: uv run --locked python scripts/dev.py infra-up
+      - run: uv run --locked python scripts/dev.py test-integration
       - if: always()
         run: docker compose down

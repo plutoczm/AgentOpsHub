@@ -8,7 +8,14 @@ from datetime import UTC, datetime
 
 request_id_context: ContextVar[str | None] = ContextVar("request_id", default=None)
 EVENTS = frozenset(
-    {"application_started", "application_stopped", "request_completed", "unhandled_exception"}
+    {
+        "application_started",
+        "application_stopped",
+        "database_unavailable",
+        "transaction_failed",
+        "request_completed",
+        "unhandled_exception",
+    }
 )
 FIELDS = ("method", "route", "status_code", "duration_ms", "error_type")
 

@@ -12,6 +12,9 @@ license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115,<1",
+    "sqlalchemy[asyncio]>=2.0.40,<2.1",
+    "asyncpg>=0.30,<1",
+    "alembic>=1.15,<2",
     "pydantic>=2.10,<3",
     "pydantic-settings>=2.7,<3",
     "uvicorn>=0.34,<1",
@@ -34,6 +37,7 @@ packages = ["backend/src/app"]
 testpaths = ["backend/tests"]
 addopts = "-ra --strict-config --strict-markers"
 filterwarnings = ["error"]
+markers = ["integration: requires the isolated PostgreSQL test runner"]
 
 [tool.coverage.run]
 source = ["app"]
@@ -59,7 +63,7 @@ convention = "google"
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["backend/src", "backend/tests", "scripts"]
+files = ["backend/src", "backend/tests", "backend/migrations", "scripts"]
 plugins = ["pydantic.mypy"]
 
 [tool.pydantic-mypy]

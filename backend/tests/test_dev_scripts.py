@@ -24,6 +24,10 @@ def isolated_repo(tmp_path: Path) -> Path:
         ("credential.pem", "synthetic fixture"),
         ("settings.txt", "sk-" + "x" * 24),
         ("settings.txt", "CUSTOM_API_KEY=" + "synthetic-test-value"),
+        ("unsafe.py", 'API_KEY = "' + 'synthetic-test-value"'),
+        ("unsafe.py", 'connect(password="' + 'synthetic-test-value")'),
+        ("unsafe.py", 'PASSWORD: str = "' + 'synthetic-test-value"'),
+        ("unsafe.py", 'connect(password=SecretStr("' + 'synthetic-test-value"))'),
     ],
 )
 def test_secret_guard_rejects_staged_credentials(

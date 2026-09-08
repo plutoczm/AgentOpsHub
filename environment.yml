@@ -1,0 +1,5 @@
+# Runtime bootstrap only. Application dependencies live in pyproject.toml + uv.lock.
+name: agentopshub
+dependencies:
+  - python=3.12
+  - pip

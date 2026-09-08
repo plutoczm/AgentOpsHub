@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import os
 import re
 import secrets
@@ -20,6 +21,35 @@ ROOT = Path(__file__).resolve().parents[1]
 def run(args: list[str]) -> None:
     """Run an argument vector without a shell and fail on nonzero exit status."""
     subprocess.run(args, cwd=ROOT, check=True)
+
+
+def sync_environment(*, dry_run: bool = False) -> None:
+    """Sync the lock into this interpreter's isolated environment, preserving Conda tools.
+
+    Explicit targeting avoids uv silently selecting the legacy project .venv.
+    Base Conda and unisolated system Python are rejected before any mutation.
+    """
+    prefix = Path(sys.prefix).resolve()
+    conda = (prefix / "conda-meta").is_dir()
+    if conda and (prefix / "conda-meta/history").is_file():
+        if (prefix / "condabin").is_dir() or (prefix / "Scripts/conda.exe").is_file():
+            raise RuntimeError("Refusing dependency installation into base Conda.")
+    elif sys.prefix == sys.base_prefix:
+        raise RuntimeError("Use an isolated Conda environment or virtual environment first.")
+    env = dict(os.environ, UV_PROJECT_ENVIRONMENT=str(prefix))
+    command = [
+        uv_command(),
+        "sync",
+        "--locked",
+        "--inexact",
+        "--python",
+        sys.executable,
+        "--no-python-downloads",
+    ]
+    if dry_run:
+        command.append("--dry-run")
+    print(f"Dependency target: {sys.executable}", flush=True)
+    subprocess.run(command, cwd=ROOT, env=env, check=True)
 
 
 def uv_command() -> str:
@@ -47,6 +77,36 @@ def init_env() -> None:
     print("Created .env with a random local password. Do not commit it.")
 
 
+def python_has_credential_literal(content: bytes) -> bool:
+    """Find hardcoded Python credential assignments/arguments without flagging lookups."""
+    tree = ast.parse(content)
+    sensitive = re.compile(r"(?:.*api_key|.*secret|.*password)$", re.IGNORECASE)
+    for node in ast.walk(tree):
+        names: list[str] = []
+        value: ast.expr | None = None
+        if isinstance(node, ast.Assign):
+            names = [target.id for target in node.targets if isinstance(target, ast.Name)]
+            value = node.value
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names = [node.target.id]
+            value = node.value
+        elif isinstance(node, ast.keyword) and node.arg is not None:
+            names = [node.arg]
+            value = node.value
+        if not any(sensitive.fullmatch(name) for name in names):
+            continue
+        if (
+            isinstance(value, ast.Call)
+            and isinstance(value.func, ast.Name)
+            and value.func.id == "SecretStr"
+            and value.args
+        ):
+            value = value.args[0]
+        if isinstance(value, ast.Constant) and isinstance(value.value, str) and value.value:
+            return True
+    return False
+
+
 def check_staged_secrets() -> None:
     """Reject local credential files and common credential forms from the Git index.
 
@@ -61,9 +121,11 @@ def check_staged_secrets() -> None:
         .split("\0")
     )
     pattern = re.compile(
-        rb"(?:sk-[A-Za-z0-9_-]{20,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|"
+        rb"(?:sk-[A-Za-z0-9_-]{20,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)"
+    )
+    assignments = re.compile(
         rb"(?im:^[ \t]*(?:[A-Z0-9_]*API_KEY|[A-Z0-9_]*SECRET|[A-Z0-9_]*PASSWORD)"
-        rb"[ \t]*=[ \t]*[^\s#]+))"
+        rb"[ \t]*=[ \t]*[^\s#]+)"
     )
     failed: list[str] = []
     for name in filter(None, names):
@@ -79,7 +141,14 @@ def check_staged_secrets() -> None:
             content = content.replace(
                 b"POSTGRES_PASSWORD=replace-with-a-local-random-password", b""
             )
-        if pattern.search(content):
+        if path.suffix == ".py":
+            try:
+                has_assignment = python_has_credential_literal(content)
+            except (SyntaxError, UnicodeDecodeError):
+                has_assignment = bool(assignments.search(content))
+        else:
+            has_assignment = bool(assignments.search(content))
+        if pattern.search(content) or has_assignment:
             failed.append(name)
     if failed:
         raise RuntimeError("Potential credentials in staged files: " + ", ".join(failed))
@@ -134,6 +203,12 @@ def main() -> int:
         choices=[
             "init-env",
             "sync",
+            "sync-check",
+            "env-info",
+            "lock",
+            "test-integration",
+            "db-upgrade",
+            "db-current",
             "serve",
             "test",
             "lint",
@@ -158,25 +233,36 @@ def main() -> int:
         "format": ["ruff", "format", "."],
         "format-check": ["ruff", "format", "--check", "."],
         "typecheck": ["mypy"],
-        "hooks": ["pre-commit", "run", "--all-files"],
-        "hooks-install": ["pre-commit", "install"],
+        "hooks": ["pre_commit", "run", "--all-files"],
+        "hooks-install": ["pre_commit", "install"],
     }
     try:
-        if args.command == "init-env":
+        if args.command == "test-integration":
+            run([sys.executable, str(ROOT / "scripts/test_postgres.py")])
+        elif args.command == "lock":
+            run([uv_command(), "lock", "--python", sys.executable, "--no-python-downloads"])
+        elif args.command == "db-upgrade":
+            run([sys.executable, "-m", "alembic", "upgrade", "head"])
+        elif args.command == "db-current":
+            run([sys.executable, "-m", "alembic", "current"])
+        elif args.command == "init-env":
             init_env()
         elif args.command == "secrets":
             check_staged_secrets()
-        elif args.command == "sync":
-            run([uv_command(), "sync", "--locked"])
+        elif args.command in {"sync", "sync-check"}:
+            sync_environment(dry_run=args.command == "sync-check")
+        elif args.command == "env-info":
+            print(f"Python: {sys.version}")
+            print(f"Executable: {sys.executable}")
+            print(f"Prefix: {sys.prefix}")
         elif args.command == "serve":
             from app.core.config import load_settings
 
             settings = load_settings()
             run(
                 [
-                    uv_command(),
-                    "run",
-                    "--locked",
+                    sys.executable,
+                    "-m",
                     "uvicorn",
                     "app.main:create_app",
                     "--factory",
@@ -189,7 +275,7 @@ def main() -> int:
             )
         elif args.command == "check":
             for command in ("lint", "format-check", "typecheck", "test"):
-                run([uv_command(), "run", "--locked", *commands[command]])
+                run([sys.executable, "-m", *commands[command]])
             run(["git", "diff", "--check"])
             run(["git", "diff", "--cached", "--check"])
         elif args.command == "compose-check":
@@ -202,7 +288,7 @@ def main() -> int:
         elif args.command == "infra-down":
             run(["docker", "compose", "down"])
         else:
-            run([uv_command(), "run", "--locked", *commands[args.command]])
+            run([sys.executable, "-m", *commands[args.command]])
     except subprocess.CalledProcessError as exc:
         print(f"Command failed (exit {exc.returncode}).", file=sys.stderr)
         return exc.returncode if exc.returncode > 0 else 1

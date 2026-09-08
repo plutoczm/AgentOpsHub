@@ -14,3 +14,14 @@ Official reference material consulted for API/operational behavior:
 - https://qdrant.tech/documentation/common-errors/ — Windows named volumes.
 
 - https://www.starlette.io/testclient/ confirms httpx2 is the current test client dependency.
+
+## Phase 1 discovery
+
+- Starting commit and clean working tree verified; legacy .venv is not tracked.
+- Conda 25.11.1, uv 0.12.10. Dedicated environment created with Python 3.12.14.
+- uv dry-run with UV_PROJECT_ENVIRONMENT=current prefix, --locked --inexact
+  --python=current executable --no-python-downloads selected the Conda environment.
+- Official reference: https://docs.astral.sh/uv/concepts/projects/config/
+  explains explicit environment targeting and exact-sync removal hazards.
+- SQLAlchemy async sessions: https://docs.sqlalchemy.org/en/20/orm/extensions/asyncio.html
+- Alembic async migration guidance: https://alembic.sqlalchemy.org/en/latest/cookbook.html

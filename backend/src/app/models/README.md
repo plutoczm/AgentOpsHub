@@ -1,3 +1,3 @@
 # models
 
-Reserved: SQLAlchemy persistence models and Alembic integration. No implementation in Phase 0.
+Phase 1 SQLAlchemy models live in `app/db/models/`. This directory is reserved for future non-persistence domain models.

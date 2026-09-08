@@ -1,21 +1,19 @@
-# Phase 0 task plan
+# Phase 1 plan
 
-Scope: architecture and bootstrap only. Phase 1 has not started.
+Starting commit: 63b165081cd08142f71ad4c138fadaa869b7e302 (accepted Phase 0).
+Scope: Conda environment migration and PostgreSQL persistence only. No Phase 2.
 
-- [x] Inspect workspace and publish A-D proposal before implementation.
-- [x] Architecture, roadmap, directory structure and configuration.
-- [x] Minimal API, logging, exception handling and boundary tests.
-- [x] Tooling, Compose, CI configuration and Windows instructions.
-- [x] Execute checks and record actual evidence in progress.md.
-- [x] Prepare the reviewed Phase 0 change for initial Git commit.
+- [x] Inspect clean repository, architecture, tools, dependencies and test boundaries.
+- [x] Create dedicated Conda runtime and verify uv dry-run target; publish A-H proposal.
+- [x] Migrate dependencies, scripts and hooks; pass Phase 0 gate and HTTP smoke test.
+- [x] Implement database lifecycle, Tenant/Ticket, repositories and migration.
+- [x] Add isolated PostgreSQL tests, readiness and CI coverage.
+- [x] Run quality gates, migration round trip and actual HTTP/failure checks.
+- [x] Update documentation with measured evidence and prepare final staged review.
 
-Commit execution is the final operation; its authoritative result is Git history.
-User supplied author Jeremy and selected the MIT license. No remote push is requested.
+The single Phase 1 commit is the final operation; Git history records its authoritative result.
 
-Decisions: modular monolith, Python 3.12 baseline, uv lock, strict mypy,
-metadata-only JSON logs, Docker named volumes and no live LLM dependency.
-Runtime/tool installation stays in .venv and ignored .tools; global PATH is unchanged.
-
-Resolved issues: unusable PATH Python, unavailable Docker Linux engine, missing uv,
-YAML quoting, formatting, Starlette httpx2 migration, AnyIO compatibility ceiling,
-and Windows proxy interception of loopback readiness probes. See progress.md.
+Decisions: explicit uv target equals current interpreter prefix, inexact sync to preserve
+Conda bootstrap packages; current interpreter executes tools. No base environment changes.
+Session.begin owns transactions; repositories flush only; tenant predicates are mandatory.
+Independent Compose test PostgreSQL plus run-owned databases keep destructive tests isolated.

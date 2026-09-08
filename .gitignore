@@ -28,3 +28,7 @@ coverage.xml
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Optional repository-local Conda prefixes
+.conda/
+conda-env/
