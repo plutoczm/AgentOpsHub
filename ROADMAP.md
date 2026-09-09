@@ -1,7 +1,7 @@
 # AgentOpsHub Roadmap
 
 每阶段独立验收、小步提交。本文为计划，不将未来能力描述为已完成。
-Phase 0-3 accepted; Phase 4 Bounded LangGraph 1.2 Agent Runtime implemented and locally validated. Phase 5 has not started.
+Phase 0-4 accepted. Phase 5 Deterministic Knowledge Ingestion & Reference Scenario Foundation is implemented and locally validated. Phase 6 has not started.
 
 | 阶段 | 目标 | 可验证的退出条件 |
 | --- | --- | --- |
@@ -10,9 +10,9 @@ Phase 0-3 accepted; Phase 4 Bounded LangGraph 1.2 Agent Runtime implemented and 
 | Phase 2 ✅ | Cloud/local-ready LLM gateway | OpenAI-compatible 协议、mock transport 测试、timeout/retry/fallback、usage/cost unknown 语义和预算 |
 | Phase 3 ✅ | Tool Runtime Foundation | 类型化 contract、registry/executor、可信租户 context、写策略、三个内置工具、超时/取消、真实 PG 隔离/回滚与安全日志 |
 | Phase 4 complete | Bounded LangGraph 1.2 Agent Runtime | Trusted Runtime context, Gateway/Executor, budgets/deadline, duplicate-ID protection, offline and real PG tests |
-| Phase 5 | Document Ingestion Foundation | Source/status lifecycle, parsing/chunking, tenant isolation and repeatable ingestion boundaries |
-| Phase 6 | Dense / Hybrid Retrieval | Embeddings, dense/lexical storage adapters, tenant filtering and combined retrieval |
-| Phase 7 | Reranking + Retrieval Evaluation | Reranker, standalone metrics and explicit evaluation sources |
+| Phase 5 complete | Deterministic Knowledge Ingestion & Reference Scenario Foundation | Trusted tenant/namespace, UTF-8 parsing/chunking, immutable revisions, idempotency, provenance, real PostgreSQL isolation/concurrency and synthetic scenario corpora |
+| Phase 6 | Retrieval Baselines | Compare lexical and dense baselines; Qdrant integration; fixed corpus/query splits and tenant/namespace filters |
+| Phase 7 | Hybrid Retrieval + RRF + Retrieval Evaluation | Measure fusion against retained lexical/dense baselines; no assumed superiority |
 | Phase 8 | Context Engineering Engine | Context selection, token budgets, compression and provenance |
 | Phase 9 | Memory Manager | Authorized memory, provenance, lifecycle and deletion |
 | Phase 10 | Agent Skills | Reviewed instruction/tool composition |
@@ -20,7 +20,7 @@ Phase 0-3 accepted; Phase 4 Bounded LangGraph 1.2 Agent Runtime implemented and 
 | Phase 12 | Agent Harness / AgentSpec | Reproducible run specifications and configuration |
 | Phase 13 | Grounding / Hallucination Evaluation | Grounded answers and hallucination evaluation |
 | Phase 14 | OpenTelemetry Agent Observability | Safe run/turn/tool telemetry |
-| Phase 15 | Agent Containment / Policy | Permissions, HITL, idempotency and safety constraints |
+| Phase 15 | Containment / HITL / Policy | Permissions, HITL, idempotency and safety constraints |
 | Later | AG-UI, A2A, Local Model Runtime, production deployment | Independent acceptance and explicit authentication/operations boundaries |
 
 
@@ -78,6 +78,23 @@ Sequential tools retain individual transactions; different IDs are not business 
 No graph retry, checkpointer, Store, public execution endpoint or external tracing.
 
 Exact validation results and process-environment recovery are recorded in progress.md.
-Recommended next scope: Phase 5 Document Ingestion Foundation only.
-STOP at Phase 4: Phase 5, RAG, ContextEngine, Memory, Skills, MCP, A2A/AG-UI, HITL,
-multi-agent, reflection and local model runtime are not implemented.
+This historical Phase 4 boundary remains intact. Phase 5 now adds an independent
+deterministic workflow; ingestion code is not inserted into Agent graph nodes.
+
+## Phase 5 completion and stopping point
+
+Shared reference-scenario contracts and deterministic knowledge storage are implemented.
+SupportOps and DataCopilot remain independent repositories, without submodules or remote
+protocol integration. Six synthetic documents produce 18 default chunks with repeated
+ingestion, history, provenance, rollback and tenant/namespace/concurrency checks.
+Exact executed quality results are recorded in progress.md.
+
+STOP after Phase 5. Phase 6 has not begun. Recommended next work is a separately scoped
+lexical versus dense retrieval baseline. Only after measured baselines should Phase 7
+hybrid/RRF and Phase 8 Context Engineering proceed. Later A2A connects independent
+SupportOps/DataCopilot agents only after a fresh adoption gate; AG-UI and local model
+runtime remain later candidates.
+
+Do not assume dense > lexical, hybrid > dense, reranking > hybrid or semantic >
+deterministic chunking. Retain simpler implementations until controlled experiments
+justify extra cost and failure modes.

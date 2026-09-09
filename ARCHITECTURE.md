@@ -1,10 +1,10 @@
 # AgentOpsHub Architecture
 
-Enterprise AI Agent Platform — 企业技术支持 / IT Support 场景。
+Evaluation-driven enterprise Agent runtime/orchestration platform; SupportOps and DataCopilot reference scenarios.
 
 ## 1. 状态与边界
 
-当前实现范围为 **Phase 0–4：Bootstrap、Conda/Persistence、内部 LLM Gateway、Tool Runtime、Bounded Agent Runtime**。本文区分现有实现与目标设计；
+当前实现范围为 **Phase 0–5：Bootstrap、Conda/Persistence、内部 LLM Gateway、Tool Runtime、Bounded Agent Runtime、Deterministic Knowledge Ingestion**。本文区分现有实现与目标设计；
 设计中的模块、表、接口和保障不代表已实现。项目是 production-oriented 原型，
 已实现 Tenant/Ticket 持久化，已实现内部有界 Agent；尚不具备认证或生产部署能力。
 
@@ -328,31 +328,100 @@ RAG 层存在后才将 knowledge_search 作为新的 READ_ONLY 工具显式注�
 RAG/knowledge_search、MCP、raw SQL 工具、认证、HITL UI 和持久化 tracing 均未实现。
 raw SQL 需要单独设计解析、租户约束、只读角色、表/语句白名单、期限/行数与审计，不在本阶段注册。
 
-## 6. RAG 与摄取（未实现）
+## 6. Deterministic knowledge ingestion (implemented); retrieval (planned)
+
+Workflow First, Agent When Necessary. Deterministic where possible. Agentic where
+necessary. Hybrid by design. Models propose; deterministic systems validate, authorize
+and execute. No complexity without measurable value. Each substantial technology must
+answer problem, simplest baseline, baseline insufficiency, classification, complexity,
+failure modes, measurable metric, experiment, rejection condition and replaceability.
+[Phase 5 decision](docs/decisions/0001-deterministic-knowledge-ingestion.md) answers this
+gate for the parser, chunker, storage model, limits and concurrency strategy.
+
+AgentOpsHub owns the platform/runtime/orchestrator/harness foundation. SupportOps owns
+support-domain workflows and agents; DataCopilot owns data-domain workflows and agents.
+Separate deployment, ownership, tests and versions justify separate repositories.
+[SupportOps](docs/scenarios/supportops.md) and [DataCopilot](docs/scenarios/datacopilot.md)
+define deterministic, agentic and hybrid responsibilities; source is not copied here.
+Future boundaries: tools/data via MCP, independent domain agents via A2A, frontend via
+AG-UI. All three are documentation only and require later independent adoption gates.
 
 ```text
-document → parser → normalized document → semantic chunker
-→ embedding gateway → vector index + lexical index + metadata
-
-query → BM25 retrieval + dense retrieval → RRF fusion
-→ optional reranking → bounded context with citations → generation
+Trusted context (tenant + namespace + optional request UUID)
+ + DocumentInput (logical source_key, title, media_type, bytes)
+ -> byte validation -> strict UTF-8 -> conservative normalization
+ -> ATX heading/fence scanner -> normalized SHA-256
+ -> Database.transaction -> upsert + scoped row lock -> latest revision check
+ -> UNCHANGED, or deterministic chunks -> provenance -> revision/chunks -> commit
 ```
 
-第一条摄取路径从 UTF-8 text/Markdown 开始，PDF 等 parser 按后续需求添加。
-限制文件大小、类型、解析时间和解压规模；正文属于不可信数据。
-对象存储接口在本地先落到忽略的 .data/，生产对象存储以后实现。
-document/content hash、parser version、chunker version、embedding model/dimension
-共同标识索引版本。语义分块先利用标题/段落边界和 token 上限，后续可比较 embedding
-语义断点策略。不能凭名称声称已完成 semantic chunking。
+All ingestion stages are deterministic; no graph node, Gateway call or ToolExecutor
+participates. The public API still contains only existing health/readiness behavior.
+Knowledge corpus presence is neither liveness nor database readiness.
 
-PostgreSQL 是文档和索引状态的事实源；Qdrant 保存向量与租户/ACL metadata。
-BM25 初期为可重建、按租户/知识库隔离的词法索引接口，具体 tokenizer 必须考虑中英文。
-增删、重试、重复上传、部分失败采用版本和幂等任务记录，只有两侧索引都完成才发布 READY；
-后续通过 outbox/worker 协调，不声称有跨存储事务。
-删除文档必须清理向量、词法索引、缓存和派生数据。
+| Table | Identity, snapshots and constraints |
+| --- | --- |
+| knowledge_documents | UUID PK, tenant UUID FK RESTRICT, namespace, source_key, current title/media_type, created_at/updated_at TIMESTAMPTZ; unique tenant/namespace/source_key; key/namespace/media/title CHECKs |
+| knowledge_document_revisions | UUID PK, document FK RESTRICT, positive revision_number, normalized_content, SHA-256, normalized byte/character sizes, title/media snapshots, parser/chunker versions, config fingerprint/max/overlap, chunk_count, created_at TIMESTAMPTZ; unique document/revision_number; hash/size/config/count CHECKs |
+| knowledge_chunks | UUID PK, revision FK RESTRICT, nonnegative chunk_index, literal content, SHA-256, typed TEXT[] section_path, character_start/end, created_at TIMESTAMPTZ; unique revision/chunk_index; hash/range/content-length CHECKs |
 
-RRF 合并排名，禁止直接相加未经标定的 BM25/向量分数。reranker 为可选接口，初期可用远程
-provider 或轻量 CPU 路径；不自动下载大模型。generation 提供来源和不足信息时的拒答。
+Unique B-tree indexes cover scoped source lookup, ordered revisions and ordered chunks;
+UUID primary-key indexes support ID joins. No additional vector or embedding columns.
+Document updated_at uses the existing database trigger function. Historical snapshots
+are immutable through repository APIs; arbitrary privileged SQL is outside that promise.
+
+Repository construction validates trusted context. Document SQL carries tenant and
+namespace predicates; revision/chunk reads join back to the scoped document, including
+warm identity maps. There is no unscoped get, destructive replacement or ownership-edit
+API. This application isolation does not replace future authentication/RLS.
+Namespace is a generic collection slug, with no scenario-specific repository logic.
+
+Service owns one Database.transaction. Repositories flush only. Upsert DO NOTHING plus
+FOR UPDATE serializes concurrent same-source decisions at READ COMMITTED; constraints
+protect source, version and chunk uniqueness. No automatic retries or distributed jobs.
+Chunk/DTO validation, insert and commit failures cannot leave an uncommitted partial
+revision. External cancellation propagates. Commit disconnection may have an unknown
+outcome; a deliberate repeat can resolve the same source/hash idempotently.
+
+Hash exact normalized UTF-8 bytes: strip one leading BOM, CRLF/CR -> LF; preserve all
+other meaningful spaces, tabs, code, Unicode and terminal newline presence. Reject invalid
+UTF-8, NUL/binary controls, unsupported media and blank sources. The 1 MiB default cap
+is checked before decoding; trusted configuration permits 1..4 MiB.
+Input cannot select tenant, namespace, DB IDs, revision number or timestamps.
+Source keys are logical identifiers only; the service opens no paths and fetches no URLs.
+
+The small scanner supports ATX H1-H6 ancestry and backtick/tilde fences, without rendering
+or executing content. Full CommonMark, Setext/nested block structure, PDF and OCR are
+deferred. Character chunking defaults to max=1000/overlap=100, max range 64..16384 and
+overlap 0..half max. Sections never overlap. Within sections choose paragraph, line,
+space/tab, then hard boundaries. Reduce overlap to preserve fences that fit; hard-slice
+oversized fences without rewriting code. Hard resource ceiling: 8192 chunks/document.
+
+Every chunk is an exact half-open slice in normalized Python Unicode code-point offsets.
+Document/revision/index IDs, section ancestry, range and chunk hash plus parent ownership
+answer tenant, namespace, source and historical origin. Persisted parser/chunker versions
+and canonical configuration fingerprint bound reproducibility; stability across deliberate
+processing-version changes is not promised.
+
+Latest content hash equal returns UNCHANGED: no new revision/chunks or timestamp/metadata
+edits, even for a new title/media/config. Changed hash appends UPDATED; first source yields
+CREATED. A -> B -> A is three chronological revisions. A future explicit rebuild operation
+must define processing-only changes instead of silently overriding idempotency.
+
+Privacy: fixed events, trusted namespace/request UUID, byte/chunk counts, safe error
+category and perf_counter duration. No source keys, titles, document/chunk text, SQL
+examples or raw parser/database errors enter ingestion logs. Errors use fixed messages.
+
+### Future retrieval evaluation boundary
+
+A trustworthy versioned corpus precedes RAG. Phase 6 compares lexical and dense baselines
+and introduces Qdrant explicitly; Phase 7 measures hybrid/RRF. Keep simpler baselines.
+Dense > lexical, hybrid > dense, reranking > hybrid and semantic > deterministic chunking
+are hypotheses, not defaults. No retrieval/index implementation exists in Phase 5.
+Versioned corpus/query splits, Recall@K/MRR/Hit Rate@K, latency, cost and tenant/provenance
+correctness should decide whether semantic/token-aware chunking or reranking adds value.
+Future indexing needs explicit lifecycle/rebuild/delete consistency; no cross-storage
+transaction, object store or durable ingestion job is claimed now.
 
 ## 7. LLM Gateway（Phase 2 已实现，未连接真实模型）
 
@@ -426,11 +495,11 @@ localhost、认证可选性、重试与有序 fallback、deadline/cancellation�
 后续本地阶段以较小量化模型为候选，实际可用规模由 VRAM/质量/延迟测量决定；
 不在此宣称支持模型大小、tokens/sec、TTFT 或最大上下文。
 
-## 8. 后续数据与安全设计（除 Phase 1 模型外未实现）
+## 8. 后续数据与安全设计（除 Phase 1 / Phase 5 模型外未实现）
 
 PostgreSQL 预计保存 tenants、users、knowledge_bases、documents、chunks、ingestion_jobs、
 conversations、messages、agent_runs、tool_calls、approvals、tickets、usage_events、audit_events。
-其中 Tenant/Ticket、SQLAlchemy 2 async sessions、Alembic 已在 Phase 1 落地；其他数据模型仍为规划。
+其中 Tenant/Ticket、SQLAlchemy 2 async sessions、Alembic 已在 Phase 1 落地；Phase 5 新增通用 knowledge_documents、knowledge_document_revisions、knowledge_chunks。其他数据模型仍为规划。
 tenant_id 不由模型或请求体任意指定；来自已验证身份，并贯穿 repository、检索过滤、缓存 key。
 后续验证 RLS 作为纵深防御，RBAC/ACL 测试覆盖跨租户拒绝路径。
 
@@ -441,7 +510,7 @@ prompt injection protection 是多层约束：不可信文档/工具输出与系
 工具参数验证、服务端授权、审批以及 adversarial eval。无法承诺绝对阻止所有 prompt injection。
 后续增加文件上传限制、SSRF 防护、输出 schema 验证、敏感信息检测与超预算终止。
 
-## 9. Observability 与评测（除基础 JSON 日志外未实现）
+## 9. Observability 与评测（JSON 日志和摄取基线已实现；检索评测/tracing 未实现）
 
 未来 tracing 使用 OpenTelemetry span 贯穿 API/graph/tool/retrieval/gateway/DB；
 用 request_id/run_id 关联，正文采集默认关闭。指标包括真实请求延迟、错误分类、重试次数、
@@ -454,7 +523,7 @@ Recall@K = top K 命中相关文档数 / 该 query 的全部相关文档数；MR
 answer relevance 可人工评分或显式标记 LLM judge，并记录 rubric、judge model/prompt；
 它不是客观真值，也不等同于 groundedness。
 
-dense / hybrid / hybrid+reranking 比较固定语料、query split、embedding、K、硬件及配置，
+lexical / dense / hybrid / hybrid+reranking 比较固定语料、query split、embedding、K、硬件及配置，
 记录 git SHA、lockfile hash、数据 hash、seed、warmup、重复次数、并发、计时边界、原始输出和费用。
 latency 报告样本数量及分位数的定义，失败样本保留；README 数字须能追溯到运行 artifact。
 目前没有 benchmark 数据、检索结果或性能声明。

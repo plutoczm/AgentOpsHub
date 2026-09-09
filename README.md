@@ -1,11 +1,63 @@
 # AgentOpsHub
 
-Enterprise AI Agent Platform — 企业技术支持后端。
+Evaluation-driven enterprise Agent runtime/orchestration platform, with SupportOps and DataCopilot reference scenarios.
 
-**已实现：Phase 0–4（后端基础、持久化、内部 LLM Gateway、Typed Tenant-Safe Tool Runtime、Bounded LangGraph Agent Runtime）。**
+**已实现：Phase 0–5（后端基础、持久化、内部 LLM Gateway、Typed Tenant-Safe Tool Runtime、Bounded LangGraph Agent Runtime、Deterministic Knowledge Ingestion）。**
 当前包含 FastAPI、配置/日志、PostgreSQL Tenant/Ticket、Alembic、内部 LLM Gateway、三个类型化工具、有界 LangGraph 执行循环，以及离线模型/工具测试和真实数据库测试。
 尚无业务 CRUD HTTP 接口、认证、公开 Agent API、RAG、MCP、前端、本地推理运行时或持久化 LLM tracing。
 Redis/Qdrant 仍是基础设施预留，运行时仅使用 PostgreSQL。没有 benchmark 或性能声明。
+
+## Workflow First and reference scenarios
+
+Workflow First, Agent When Necessary.
+
+Deterministic where possible. Agentic where necessary. Hybrid by design.
+Models propose. Deterministic systems validate, authorize and execute.
+No complexity without measurable value.
+
+AgentOpsHub provides platform/runtime/orchestration/harness foundations:
+
+```text
+AgentOpsHub
+ +-- SupportOps Reference Scenario
+ |   +-- Order / Refund / Ticket
+ +-- DataCopilot Reference Scenario
+     +-- Schema / SQL / Analysis
+```
+
+**Implemented in Phase 5:** shared architecture contracts and a generic deterministic
+knowledge-ingestion substrate, verified with six synthetic documents.
+**Planned:** remote domain-agent integration and MCP/A2A/AG-UI boundaries.
+The three repositories remain independent; no full source copy, repository merge,
+Git submodule or remote protocol integration was introduced.
+See [scenario contracts](docs/scenarios/integration-map.md).
+
+## Internal knowledge ingestion (Phase 5)
+
+`KnowledgeIngestionService.ingest(DocumentInput, KnowledgeIngestionContext)`
+validates UTF-8 text/Markdown, preserves meaningful whitespace, scans ATX headings
+and fenced code, creates deterministic character chunks with provenance, hashes
+normalized content and persists document/revision/chunk records atomically.
+
+Tenant and namespace come exclusively from trusted context. No public upload route,
+URL fetching, source execution, Agent, ToolExecutor or LLM invocation is involved.
+Default limits: 1 MiB source, 1000-character chunks, 100-character overlap.
+Maximum 8192 chunks per document; overlap never crosses sections and may reduce to
+preserve fitting code fences. Oversized fences retain literal text across slices.
+
+Identity is tenant + namespace + logical source_key. CREATED introduces revision 1;
+UPDATED preserves history and appends a changed-content revision; UNCHANGED reuses
+the latest hash without new revisions/chunks or timestamp changes. Title/media/config
+changes alone do not silently rebuild unchanged content.
+SHA-256 covers exact normalized UTF-8 text. PostgreSQL unique constraints and scoped
+row locks protect concurrent same-source ingestion. Repositories never commit.
+
+[Ingestion contract](backend/src/app/knowledge/README.md) documents formats and limits;
+[Phase 5 decision](docs/decisions/0001-deterministic-knowledge-ingestion.md) records
+the adoption gate and alternatives;
+[evaluation baseline](evaluation/README.md) records the synthetic 6-document/18-chunk
+result. These checks do not establish retrieval accuracy or business benchmarks.
+Alembic head is `20260909_01`; migrate explicitly, never at application startup.
 
 ## 本地 Windows 推荐环境：Conda + uv
 
@@ -384,10 +436,10 @@ under the accepted Conda workflow. Exact results: [progress.md](progress.md).
 
 **Not implemented:** RAG, ContextEngine, Memory Manager, Skills, MCP, A2A, AG-UI, HITL,
 persistent checkpointing, persistent Agent memory, public Agent API, multi-agent, reflection,
-authentication, frontend or local LLM runtime. Phase 5 is not started.
+authentication, frontend or local LLM runtime. Phase 5 provides deterministic internal knowledge ingestion and reference-scenario contracts.
 
 ## 设计与 License
 
 [ARCHITECTURE.md](ARCHITECTURE.md) 区分现有实现与未来设计；
-[ROADMAP.md](ROADMAP.md) 记录阶段状态。Phase 4 is implemented; Phase 5 has not started.
+[ROADMAP.md](ROADMAP.md) 记录阶段状态。Phase 0–5 are implemented and locally validated. Phase 6 has not started.
 MIT，见 [LICENSE](LICENSE)。

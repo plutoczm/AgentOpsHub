@@ -11,11 +11,11 @@ from pydantic import SecretStr
 from sqlalchemy import delete, text
 
 from app.core.config import Settings
-from app.db.models import Tenant, Ticket
+from app.db.models import DocumentRevision, KnowledgeChunk, KnowledgeDocument, Tenant, Ticket
 from app.db.session import Database
 
 ROOT = Path(__file__).resolve().parents[3]
-REVISION = "20260908_01"
+REVISION = "20260909_01"
 
 
 @pytest.fixture(scope="session")
@@ -82,7 +82,14 @@ def migrated_database(postgres_settings: Settings) -> dict[str, str]:
     alembic("upgrade", "head")
     current = alembic("current")
     assert REVISION in current
-    assert asyncio.run(tables()) == ["alembic_version", "tenants", "tickets"]
+    assert asyncio.run(tables()) == [
+        "alembic_version",
+        "knowledge_chunks",
+        "knowledge_document_revisions",
+        "knowledge_documents",
+        "tenants",
+        "tickets",
+    ]
     alembic("downgrade", "base")
     assert asyncio.run(tables()) == ["alembic_version"]
     alembic("upgrade", "head")
@@ -119,6 +126,9 @@ async def database(
     try:
         # Dedicated run-owned DB only. Tests are sequential and exercise real commits.
         async with db.transaction() as session:
+            await session.execute(delete(KnowledgeChunk))
+            await session.execute(delete(DocumentRevision))
+            await session.execute(delete(KnowledgeDocument))
             await session.execute(delete(Ticket))
             await session.execute(delete(Tenant))
         yield db

@@ -467,3 +467,73 @@ Existing accepted HEAD was rechecked before commit. Commit command uses the same
 Conda PATH wrapper: git commit -m "feat: add bounded langgraph agent runtime".
 Final SHA and clean post-commit status are recorded in Git history and the final response;
 a commit cannot embed its own SHA. No push or Phase 5 work.
+
+## Phase 5
+Preflight passed and A-AJ proposal published before implementation.
+PowerShell text output/argument quoting failed; use UTF-8 Python scripts encoded as hex for reliable transport.
+
+Phase 5 first validation: 65 focused knowledge unit tests passed. Full isolated PostgreSQL run: 418 passed in 19.40s, including 14 new knowledge integration cases. Empty migration/downgrade/reupgrade/check and live HTTP probes passed. Strict mypy passed after correcting the concurrent test return type. Ruff-generated formatting applied without relaxing rules.
+Synthetic corpus: 6 documents, 18 default chunks, repeated ingest UNCHANGED, historical and scope checks pass. A 7020-case local fence-boundary probe found no fitting-fence splits or missing source characters; selected boundary cases are now regression tests.
+Conda sync and sync-check passed; sync-check reported Would make no changes. No dependency version changes. Harmless existing cross-filesystem uv hardlink fallback used copying.
+Automation transport fixes: encoded command exceeded Windows command length, so switched to ignored local payload files plus Python UTF-8 writer; one patch attempted duplicate file operations and was corrected with unique payload paths. No workspace content was lost.
+
+## Phase 5 final validation evidence
+
+Starting SHA: 592a4eb6b43cce64616d4b81962c282f00b6575b.
+Conda agentopshub; Python 3.12.14; executable D:/Anaconda3/envs/agentopshub/python.exe;
+prefix D:/Anaconda3/envs/agentopshub; uv 0.12.10; LangGraph 1.2.11; no .venv.
+No new/changed dependency versions; pyproject.toml and uv.lock remain unchanged.
+
+Executed through the existing ignored .tools/phase3_run.py process-local PATH wrapper
+using the explicit accepted Conda interpreter (no permanent activation/global changes):
+
+| Command | Observed final result |
+| --- | --- |
+| python scripts/dev.py sync | Passed; dedicated Conda target, only editable project rebuilt |
+| python scripts/dev.py sync-check | Passed; Would make no changes |
+| python scripts/dev.py check | Ruff lint and format passed; strict mypy 95 source files; 347 passed, 83 skipped in 4.57s; whitespace checks passed |
+| python scripts/dev.py test-integration | 430 passed in 21.85s, no skips; real isolated PostgreSQL |
+| python scripts/dev.py compose-check | Passed |
+| Alembic upgrade head / current (runner) | Passed from empty DB; 20260909_01 (head) |
+| Alembic downgrade base / upgrade head (runner) | Passed in run-owned DB |
+| Alembic check (runner) | No new upgrade operations detected |
+| Real Uvicorn HTTP probe (runner) | DB up: health=200, ready=200; DB down: health=200, ready=503 |
+
+Final test composition: 347 non-integration tests (77 knowledge tests), 83 PostgreSQL
+integration tests (14 knowledge tests), total 430. Focused knowledge suite initially
+ran 65 passing tests; 12 fence boundary regressions subsequently passed in full suites.
+Coverage: 97.96126401630988% combined statement/branch coverage (display 98%);
+1659/1678 statements and 263/284 branches covered. No quality threshold/exclusion changes.
+Test elapsed times are suite observations, not ingestion performance measurements.
+
+Corpus evidence: six fictional documents, three per scenario; each produced three
+chunks, nine per namespace, 18 total. All six repeat calls were UNCHANGED with original
+revision/chunks preserved. Exact repeat normalization/chunk hashes/order/ranges and
+parent provenance checks passed. Tenant/namespace reads, warm identity-map rejection,
+unique constraints, changed revision history and rollback after real flushed writes
+passed. Five concurrent same-source requests produced one CREATED/UPDATED and four
+UNCHANGED for both first-ingestion and existing-source races.
+
+Raw LogRecords and formatted JSON were checked for source/chunk/error markers,
+including real PostgreSQL failure paths. No LLMGateway, AgentRuntime or ToolExecutor
+call occurred in ingestion tests; those entrypoints were patched to fail if invoked.
+Accepted Phase 2/3/4 source, API health/readiness and main composition code are unchanged;
+their complete offline and real PostgreSQL regression tests passed.
+
+Decision: docs/decisions/0001-deterministic-knowledge-ingestion.md.
+Scenario contracts: docs/scenarios/{supportops,datacopilot,integration-map}.md.
+No repository merge, Git submodule, remote scenario invocation or A2A implementation.
+No public upload route, arbitrary path/URL fetch, source execution, embedding,
+Qdrant retrieval, semantic/model chunking, ContextEngine, Memory, Skills, MCP or AG-UI.
+No Phase 6 implementation. No push.
+
+Known limits: explicit Markdown subset, character units, oversized fence splitting,
+8192-chunk rejection, repository-contract historical immutability (not a privileged
+SQL prohibition), no authentication/RLS, no metadata-only edit or reprocessing API,
+READ COMMITTED same-source lock contention, commit-disconnect uncertainty, no durable
+jobs/retention policy or production ingestion SLO. Synchronous parsing is bounded by
+source bytes/chunk count but not a separate preemptive CPU deadline. Remote CI and
+Linux/Python 3.13 were not executed here. AnyIO compatibility ceiling remains unchanged.
+
+Final staged review: 37 task files; staged bytes match reviewed working content; Python AST parsing passed. Local dotenv credential values absent from staged files (checked without printing them). No environment/tool/artifact/data files or submodules staged. Accepted runtime/API source and dependency files unchanged. Working/index whitespace checks passed. python scripts/dev.py hooks passed Ruff lint, format, strict mypy and staged secret checks.
+One local Phase 5 commit is prepared: feat: add deterministic tenant-safe knowledge ingestion. Final SHA and clean status are verified after commit; no push and no Phase 6 work.

@@ -61,3 +61,10 @@ Official reference material consulted for API/operational behavior:
 - Installed signatures confirmed LangGraph 1.2.11 / langchain-core 1.6.2; no top-level langchain. 25 packages added (LangGraph plus 24 transitive dependencies) without changing existing locked versions. Required LangSmith SDK 0.12.2 is present transitively; runtime disables tracing via its scoped context, without global environment mutation. sync and sync-check passed; uv copied across filesystems after harmless hardlink fallback.
 
 - Installed LangGraph internal default recursion limit is 10007; langchain-core default remains 25. Runtime passes its own 2*M+2 value and tests the actual graph, so neither default governs execution. Documentation avoids old-default assumptions.
+
+## Phase 5 discovery
+Clean accepted HEAD; Python 3.12.14, uv 0.12.10, no .venv. No memory hits.
+Database.transaction owns commit/rollback; repositories scope SQL and flush.
+JsonFormatter uses allowlists. No existing ADR convention. Separate scenario READMEs inspected; no source copied.
+Zero dependencies; PostgreSQL upsert and scoped row lock.
+References: https://www.postgresql.org/docs/current/explicit-locking.html and https://docs.sqlalchemy.org/en/20/dialects/postgresql.html#insert-on-conflict-upsert

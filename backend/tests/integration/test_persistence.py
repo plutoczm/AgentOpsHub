@@ -25,9 +25,9 @@ async def test_connection_and_migration(
     database: Database, migrated_database: dict[str, str]
 ) -> None:
     assert await database.ready()
-    assert "20260908_01" in migrated_database["current"]
+    assert "20260909_01" in migrated_database["current"]
     assert migrated_database["downgrade"] == "passed"
-    assert "20260908_01" in migrated_database["reupgrade"]
+    assert "20260909_01" in migrated_database["reupgrade"]
     assert "No new upgrade operations" in migrated_database["metadata_check"]
 
 

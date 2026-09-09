@@ -10,6 +10,11 @@ request_id_context: ContextVar[str | None] = ContextVar("request_id", default=No
 EVENTS = frozenset(
     {
         "application_started",
+        "knowledge_ingest_start",
+        "knowledge_ingest_created",
+        "knowledge_ingest_updated",
+        "knowledge_ingest_unchanged",
+        "knowledge_ingest_error",
         "agent_start",
         "agent_model_turn",
         "agent_tool_round",
@@ -28,6 +33,10 @@ EVENTS = frozenset(
     }
 )
 FIELDS = (
+    "knowledge_namespace",
+    "knowledge_chunks",
+    "knowledge_bytes",
+    "knowledge_error",
     "agent_error",
     "agent_model_turns",
     "agent_tool_calls_seen",

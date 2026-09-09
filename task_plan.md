@@ -1,15 +1,11 @@
-# Phase 4 plan
+# Phase 5 plan
+Starting SHA: 592a4eb6b43cce64616d4b81962c282f00b6575b. No push; stop before Phase 6.
+- [x] Clean preflight and inspection; A-AJ proposal published.
+- [x] Implement deterministic ingestion and migration.
+- [x] Synthetic corpus, unit/golden and real PostgreSQL tests.
+- [x] Decision/scenario and project docs.
+- [x] Full workflow, security/staged review and final report evidence prepared.
 
-Starting SHA: 00fa41009917a6d0eea5d526a38b4612e4f284ce. Phase 4 only; no push.
-
-- [x] Recover accepted Conda/task-process workflow and verify clean preflight.
-- [x] Inspect existing boundaries and official wheel API; publish design proposal.
-- [x] Lock and sync dependency; inspect installed API.
-- [x] Implement bounded internal StateGraph runtime.
-- [x] Offline and real PostgreSQL security tests.
-- [x] Documentation, quality gates and security review.
-- [x] Prepare reviewed Phase 4 commit and final report evidence.
-
-Preflight correction: Windows CreateProcess does not search the child env PATH for the executable. Use accepted wrapper with explicit executable arguments, or set PATH inside the temporary Python launcher before resolution. No global changes.
-
-Final validation: 57 focused Agent tests; 339 complete real-PostgreSQL run; 98.3204% combined coverage. Staged membership/byte review and safety checks passed. Commit is the final operation; Git history and final response record resulting SHA and clean status. No Phase 5 work.
+Final checks: 430 passed; 97.96126401630988% combined coverage; 6 fixtures/18 chunks.
+Commit is the final operation; Git history and final report record resulting SHA and clean status.
+Phase 6 remains unstarted.
