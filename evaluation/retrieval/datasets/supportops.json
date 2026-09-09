@@ -1,0 +1,265 @@
+{
+  "name": "supportops-synthetic-v1",
+  "version": "1.0.0",
+  "namespace": "supportops",
+  "description": "Synthetic benchmark. Manually specified source-level binary labels; not customer data.",
+  "documents": [
+    {
+      "source_key": "refund_policy.md",
+      "title": "refund policy",
+      "path": "examples/knowledge/supportops/refund_policy.md"
+    },
+    {
+      "source_key": "ticket_escalation.md",
+      "title": "ticket escalation",
+      "path": "examples/knowledge/supportops/ticket_escalation.md"
+    },
+    {
+      "source_key": "order_support.md",
+      "title": "order support",
+      "path": "examples/knowledge/supportops/order_support.md"
+    },
+    {
+      "source_key": "subscription_cancellation.md",
+      "title": "subscription cancellation",
+      "path": "evaluation/retrieval/fixtures/supportops/subscription_cancellation.md"
+    },
+    {
+      "source_key": "damaged_delivery.md",
+      "title": "damaged delivery",
+      "path": "evaluation/retrieval/fixtures/supportops/damaged_delivery.md"
+    },
+    {
+      "source_key": "account_security.md",
+      "title": "account security",
+      "path": "evaluation/retrieval/fixtures/supportops/account_security.md"
+    },
+    {
+      "source_key": "payment_receipts.md",
+      "title": "payment receipts",
+      "path": "evaluation/retrieval/fixtures/supportops/payment_receipts.md"
+    },
+    {
+      "source_key": "service_incidents.md",
+      "title": "service incidents",
+      "path": "evaluation/retrieval/fixtures/supportops/service_incidents.md"
+    }
+  ],
+  "cases": [
+    {
+      "query_id": "supportops-01",
+      "query": "refund eligibility",
+      "category": "exact",
+      "relevant_sources": [
+        "refund_policy.md"
+      ],
+      "rationale": "Purchase eligibility and 14-day rule."
+    },
+    {
+      "query_id": "supportops-02",
+      "query": "ticket escalation",
+      "category": "exact",
+      "relevant_sources": [
+        "ticket_escalation.md",
+        "service_incidents.md"
+      ],
+      "rationale": "Escalation workflow and its relationship to incidents."
+    },
+    {
+      "query_id": "supportops-03",
+      "query": "payment receipt",
+      "category": "exact",
+      "relevant_sources": [
+        "payment_receipts.md"
+      ],
+      "rationale": "Receipt retrieval procedure."
+    },
+    {
+      "query_id": "supportops-04",
+      "query": "automatic renewal",
+      "category": "exact",
+      "relevant_sources": [
+        "subscription_cancellation.md"
+      ],
+      "rationale": "Cancellation of renewal."
+    },
+    {
+      "query_id": "supportops-05",
+      "query": "check customer identity",
+      "category": "ordinary",
+      "relevant_sources": [
+        "order_support.md",
+        "account_security.md"
+      ],
+      "rationale": "Customer verification before retrieval or access changes."
+    },
+    {
+      "query_id": "supportops-06",
+      "query": "cancel my subscription",
+      "category": "ordinary",
+      "relevant_sources": [
+        "subscription_cancellation.md"
+      ],
+      "rationale": "Ordinary cancellation request; wording intentionally not copied."
+    },
+    {
+      "query_id": "supportops-07",
+      "query": "report a damaged parcel",
+      "category": "ordinary",
+      "relevant_sources": [
+        "damaged_delivery.md"
+      ],
+      "rationale": "Evidence required for a damaged shipment."
+    },
+    {
+      "query_id": "supportops-08",
+      "query": "where is my receipt",
+      "category": "ordinary",
+      "relevant_sources": [
+        "payment_receipts.md"
+      ],
+      "rationale": "User phrasing for locating a receipt."
+    },
+    {
+      "query_id": "supportops-09",
+      "query": "RMA",
+      "category": "acronym",
+      "relevant_sources": [
+        "damaged_delivery.md"
+      ],
+      "rationale": "Return merchandise authorization."
+    },
+    {
+      "query_id": "supportops-10",
+      "query": "MFA recovery",
+      "category": "acronym",
+      "relevant_sources": [
+        "account_security.md"
+      ],
+      "rationale": "Multi-factor recovery workflow."
+    },
+    {
+      "query_id": "supportops-11",
+      "query": "SLA",
+      "category": "acronym",
+      "relevant_sources": [
+        "service_incidents.md"
+      ],
+      "rationale": "Incident first-response target."
+    },
+    {
+      "query_id": "supportops-12",
+      "query": "money back for an unopened purchase",
+      "category": "paraphrase",
+      "relevant_sources": [
+        "refund_policy.md"
+      ],
+      "rationale": "Refund expressed without the corpus term."
+    },
+    {
+      "query_id": "supportops-13",
+      "query": "stop the next recurring charge",
+      "category": "paraphrase",
+      "relevant_sources": [
+        "subscription_cancellation.md"
+      ],
+      "rationale": "Cancel renewal without copied terminology."
+    },
+    {
+      "query_id": "supportops-14",
+      "query": "someone else took over my login",
+      "category": "paraphrase",
+      "relevant_sources": [
+        "account_security.md"
+      ],
+      "rationale": "Account takeover expressed by the user."
+    },
+    {
+      "query_id": "supportops-15",
+      "query": "proof that I paid",
+      "category": "paraphrase",
+      "relevant_sources": [
+        "payment_receipts.md"
+      ],
+      "rationale": "Receipt expressed conceptually."
+    },
+    {
+      "query_id": "supportops-16",
+      "query": "refund idempotency transaction",
+      "category": "multi_keyword",
+      "relevant_sources": [
+        "refund_policy.md"
+      ],
+      "rationale": "Controlled refund execution."
+    },
+    {
+      "query_id": "supportops-17",
+      "query": "order tenant identity",
+      "category": "multi_keyword",
+      "relevant_sources": [
+        "order_support.md",
+        "refund_policy.md"
+      ],
+      "rationale": "Order retrieval and eligibility both require ownership verification."
+    },
+    {
+      "query_id": "supportops-18",
+      "query": "parcel photographs packaging",
+      "category": "multi_keyword",
+      "relevant_sources": [
+        "damaged_delivery.md"
+      ],
+      "rationale": "Evidence for shipment damage."
+    },
+    {
+      "query_id": "supportops-19",
+      "query": "refund cancellation eligibility",
+      "category": "distractor",
+      "relevant_sources": [
+        "subscription_cancellation.md",
+        "refund_policy.md"
+      ],
+      "rationale": "Cancellation and refund eligibility are separate policies."
+    },
+    {
+      "query_id": "supportops-20",
+      "query": "incident ticket escalation",
+      "category": "distractor",
+      "relevant_sources": [
+        "service_incidents.md",
+        "ticket_escalation.md"
+      ],
+      "rationale": "Distinguish shared outage handling from ticket escalation."
+    },
+    {
+      "query_id": "supportops-21",
+      "query": "order receipt tax invoice",
+      "category": "distractor",
+      "relevant_sources": [
+        "payment_receipts.md"
+      ],
+      "rationale": "An order confirmation is not a tax invoice."
+    },
+    {
+      "query_id": "supportops-22",
+      "query": "pet insurance reimbursement",
+      "category": "no_answer",
+      "relevant_sources": [],
+      "rationale": "No insurance product or coverage policy in the corpus."
+    },
+    {
+      "query_id": "supportops-23",
+      "query": "loyalty points expiration",
+      "category": "no_answer",
+      "relevant_sources": [],
+      "rationale": "No loyalty program documented."
+    },
+    {
+      "query_id": "supportops-24",
+      "query": "international customs tariff",
+      "category": "no_answer",
+      "relevant_sources": [],
+      "rationale": "No customs or tariff policy documented."
+    }
+  ]
+}

@@ -2,10 +2,10 @@
 
 Evaluation-driven enterprise Agent runtime/orchestration platform, with SupportOps and DataCopilot reference scenarios.
 
-**已实现：Phase 0–5（后端基础、持久化、内部 LLM Gateway、Typed Tenant-Safe Tool Runtime、Bounded LangGraph Agent Runtime、Deterministic Knowledge Ingestion）。**
+**已实现：Phase 0–6（后端基础、持久化、内部 LLM Gateway、Typed Tenant-Safe Tool Runtime、Bounded LangGraph Agent Runtime、Deterministic Knowledge Ingestion、Retrieval Evaluation Foundation + PostgreSQL FTS Lexical Baseline）。**
 当前包含 FastAPI、配置/日志、PostgreSQL Tenant/Ticket、Alembic、内部 LLM Gateway、三个类型化工具、有界 LangGraph 执行循环，以及离线模型/工具测试和真实数据库测试。
 尚无业务 CRUD HTTP 接口、认证、公开 Agent API、RAG、MCP、前端、本地推理运行时或持久化 LLM tracing。
-Redis/Qdrant 仍是基础设施预留，运行时仅使用 PostgreSQL。没有 benchmark 或性能声明。
+Redis/Qdrant 仍是基础设施预留，运行时仅使用 PostgreSQL。已有明确标注的 synthetic retrieval benchmark；没有生产质量或生产性能声明。
 
 ## Workflow First and reference scenarios
 
@@ -25,8 +25,9 @@ AgentOpsHub
      +-- Schema / SQL / Analysis
 ```
 
-**Implemented in Phase 5:** shared architecture contracts and a generic deterministic
-knowledge-ingestion substrate, verified with six synthetic documents.
+**Implemented through Phase 6:** shared architecture contracts, deterministic ingestion,
+trusted lexical retrieval and common evaluation semantics; 16 synthetic benchmark documents
+and 48 labeled queries across the two reference scenarios.
 **Planned:** remote domain-agent integration and MCP/A2A/AG-UI boundaries.
 The three repositories remain independent; no full source copy, repository merge,
 Git submodule or remote protocol integration was introduced.
@@ -57,7 +58,51 @@ row locks protect concurrent same-source ingestion. Repositories never commit.
 the adoption gate and alternatives;
 [evaluation baseline](evaluation/README.md) records the synthetic 6-document/18-chunk
 result. These checks do not establish retrieval accuracy or business benchmarks.
-Alembic head is `20260909_01`; migrate explicitly, never at application startup.
+Phase 5 schema revision is `20260909_01`; Phase 6 adds index revision `20260909_02`.
+Migrate explicitly, never at application startup.
+
+## Retrieval Evaluation Foundation + Lexical Baseline (Phase 6)
+
+```text
+Knowledge Ingestion -> PostgreSQL Knowledge Corpus
+                    -> Latest-revision Lexical Retriever -> Retrieval Evaluator
+```
+
+`PostgresFTSRetriever` implements the shared `KnowledgeRetriever` protocol.
+`KnowledgeRetrievalContext` supplies trusted tenant/namespace; the request contains
+only query and top_k. SQL enforces tenant, namespace and latest revision before limiting
+results. Query text is bound, never interpolated. No public search endpoint or
+knowledge_search Agent tool is registered.
+
+This is **PostgreSQL Full-Text Search**, not BM25. Explicit `pg_catalog.simple`,
+`plainto_tsquery` AND matching, `ts_rank_cd(..., 0)`, and a GIN expression index form
+the baseline. Score DESC, C-collated source key, chunk index and UUID define stable order.
+Scores are backend-specific, not probability/confidence. Raw query cap: 512 characters;
+top_k defaults to 5 and is bounded to 1–20. Queries and returned content are not logged.
+
+```text
+python scripts/dev.py eval-retrieval
+```
+
+The command provisions only an isolated temporary PostgreSQL database, ingests the fixed
+synthetic corpus through Phase 5, evaluates twice and cleans its own resources.
+SupportOps and DataCopilot each have 8 documents and 24 queries. Actual @5 HitRate:
+SupportOps 14/21 (66.67%), DataCopilot 13/21 (61.90%); both Recall@5=13/21.
+Both paraphrase groups scored 0/4, while ordinary wording scored 2/4 each.
+No-answer accuracy was 3/3 each on six easy negatives, not a production answerability claim.
+
+[Benchmark formulas/data](evaluation/retrieval/README.md),
+[measured tables and failures](evaluation/retrieval/measured-results.md),
+[retrieval contract](backend/src/app/retrieval/README.md), and
+[Phase 6 decision](docs/decisions/0002-retrieval-lexical-baseline.md) provide evidence.
+The baseline lacks stemming, synonym expansion and strong Chinese segmentation.
+AND terms split across chunks can miss even an exact policy query.
+
+Dense/Qdrant remain Phase 7 candidates; Hybrid/RRF, reranking and generation are deferred.
+No embedding API, model download, Agent/LLM invocation or cross-repository runtime
+integration was added. Phase 5 content hashes/history/config-only UNCHANGED semantics
+remain intact; reindex/rebuild and metadata-only versioning need explicit future decisions.
+Current Alembic head: `20260909_02`; previous migrations are unchanged.
 
 ## 本地 Windows 推荐环境：Conda + uv
 
@@ -436,10 +481,10 @@ under the accepted Conda workflow. Exact results: [progress.md](progress.md).
 
 **Not implemented:** RAG, ContextEngine, Memory Manager, Skills, MCP, A2A, AG-UI, HITL,
 persistent checkpointing, persistent Agent memory, public Agent API, multi-agent, reflection,
-authentication, frontend or local LLM runtime. Phase 5 provides deterministic internal knowledge ingestion and reference-scenario contracts.
+authentication, frontend or local LLM runtime. Phase 6 provides internal lexical retrieval and a deterministic retrieval evaluator; it does not generate answers.
 
 ## 设计与 License
 
 [ARCHITECTURE.md](ARCHITECTURE.md) 区分现有实现与未来设计；
-[ROADMAP.md](ROADMAP.md) 记录阶段状态。Phase 0–5 are implemented and locally validated. Phase 6 has not started.
+[ROADMAP.md](ROADMAP.md) 记录阶段状态。Phase 0–6 are implemented and locally validated. Phase 7 has not started.
 MIT，见 [LICENSE](LICENSE)。

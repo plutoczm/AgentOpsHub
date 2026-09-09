@@ -11,6 +11,9 @@ EVENTS = frozenset(
     {
         "application_started",
         "knowledge_ingest_start",
+        "knowledge_search_start",
+        "knowledge_search_result",
+        "knowledge_search_error",
         "knowledge_ingest_created",
         "knowledge_ingest_updated",
         "knowledge_ingest_unchanged",
@@ -33,6 +36,11 @@ EVENTS = frozenset(
     }
 )
 FIELDS = (
+    "retrieval_namespace",
+    "retrieval_top_k",
+    "retrieval_count",
+    "retrieval_error",
+    "retriever",
     "knowledge_namespace",
     "knowledge_chunks",
     "knowledge_bytes",

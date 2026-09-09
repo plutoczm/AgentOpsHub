@@ -1,7 +1,7 @@
 # AgentOpsHub Roadmap
 
 每阶段独立验收、小步提交。本文为计划，不将未来能力描述为已完成。
-Phase 0-4 accepted. Phase 5 Deterministic Knowledge Ingestion & Reference Scenario Foundation is implemented and locally validated. Phase 6 has not started.
+Phase 0-5 accepted. Phase 6 Retrieval Evaluation Foundation + Deterministic Lexical Baseline is implemented and locally validated. Phase 7 has not started.
 
 | 阶段 | 目标 | 可验证的退出条件 |
 | --- | --- | --- |
@@ -11,17 +11,19 @@ Phase 0-4 accepted. Phase 5 Deterministic Knowledge Ingestion & Reference Scenar
 | Phase 3 ✅ | Tool Runtime Foundation | 类型化 contract、registry/executor、可信租户 context、写策略、三个内置工具、超时/取消、真实 PG 隔离/回滚与安全日志 |
 | Phase 4 complete | Bounded LangGraph 1.2 Agent Runtime | Trusted Runtime context, Gateway/Executor, budgets/deadline, duplicate-ID protection, offline and real PG tests |
 | Phase 5 complete | Deterministic Knowledge Ingestion & Reference Scenario Foundation | Trusted tenant/namespace, UTF-8 parsing/chunking, immutable revisions, idempotency, provenance, real PostgreSQL isolation/concurrency and synthetic scenario corpora |
-| Phase 6 | Retrieval Baselines | Compare lexical and dense baselines; Qdrant integration; fixed corpus/query splits and tenant/namespace filters |
-| Phase 7 | Hybrid Retrieval + RRF + Retrieval Evaluation | Measure fusion against retained lexical/dense baselines; no assumed superiority |
-| Phase 8 | Context Engineering Engine | Context selection, token budgets, compression and provenance |
-| Phase 9 | Memory Manager | Authorized memory, provenance, lifecycle and deletion |
-| Phase 10 | Agent Skills | Reviewed instruction/tool composition |
-| Phase 11 | MCP | Adapters preserving tool authorization and tenant boundaries |
-| Phase 12 | Agent Harness / AgentSpec | Reproducible run specifications and configuration |
-| Phase 13 | Grounding / Hallucination Evaluation | Grounded answers and hallucination evaluation |
-| Phase 14 | OpenTelemetry Agent Observability | Safe run/turn/tool telemetry |
-| Phase 15 | Containment / HITL / Policy | Permissions, HITL, idempotency and safety constraints |
-| Later | AG-UI, A2A, Local Model Runtime, production deployment | Independent acceptance and explicit authentication/operations boundaries |
+| Phase 6 complete | Retrieval Evaluation Foundation + Deterministic Lexical Baseline | PostgreSQL FTS, trusted/latest-only SQL, fixed 16-document/48-query synthetic benchmark, reproducible metrics and observed failure analysis |
+| Phase 7 | Dense Retrieval Baseline + Qdrant | Same contracts/datasets/metrics; explicit embedding abstraction and justified provider/model; compare with lexical; no Hybrid/RRF initially |
+| Phase 8 | Lexical vs Dense error analysis + Hybrid/RRF adoption decision | Adopt fusion only if measured complementary failures and gains justify it |
+| Phase 9 | Reranking evaluation, if justified | Compare against retained simpler retrieval baselines |
+| Phase 10 | Context Engineering | Only after measured retrieval baselines; bounded context/provenance |
+| Phase 11 | Memory | Explicit authorization, retention and deletion |
+| Phase 12 | Agent Skills | Reviewed instruction/tool composition |
+| Phase 13 | MCP | Preserve trusted context and tool authorization |
+| Phase 14 | Agent Harness / AgentSpec | Reproducible specifications |
+| Phase 15 | Grounding / Hallucination Evaluation | Separate retrieval from generation quality |
+| Phase 16 | OpenTelemetry Agent Observability | Privacy-safe telemetry |
+| Phase 17 | Containment / HITL / Policy | Permission, approval and side-effect control |
+| Later | A2A with SupportOps/DataCopilot, AG-UI, Local Model Runtime | Independent adoption and deployment decisions |
 
 
 安全边界从相关模块第一版开始落实，不等到后续安全阶段才补权限。
@@ -89,12 +91,23 @@ protocol integration. Six synthetic documents produce 18 default chunks with rep
 ingestion, history, provenance, rollback and tenant/namespace/concurrency checks.
 Exact executed quality results are recorded in progress.md.
 
-STOP after Phase 5. Phase 6 has not begun. Recommended next work is a separately scoped
-lexical versus dense retrieval baseline. Only after measured baselines should Phase 7
-hybrid/RRF and Phase 8 Context Engineering proceed. Later A2A connects independent
-SupportOps/DataCopilot agents only after a fresh adoption gate; AG-UI and local model
-runtime remain later candidates.
+Phase 5 remains accepted. Phase 6 now adds retrieval/evaluation without changing ingestion
+semantics. Later A2A, AG-UI and local model runtime retain independent adoption gates.
 
 Do not assume dense > lexical, hybrid > dense, reranking > hybrid or semantic >
 deterministic chunking. Retain simpler implementations until controlled experiments
 justify extra cost and failure modes.
+
+
+## Phase 6 completion and stopping point
+
+PostgreSQL FTS lexical retrieval and a deterministic source-level evaluator are implemented.
+This is not BM25, Dense, Hybrid RAG or answer generation. The fixed synthetic benchmark
+exposes paraphrase misses (0/4 per scenario), ordinary wording misses (2/4 per scenario),
+acronym and chunk-boundary limitations. Actual tables and caveats are in
+evaluation/retrieval/measured-results.md; quality evidence is in progress.md.
+
+STOP after Phase 6. Do not begin Phase 7 in this delivery. Next scope is a Dense baseline
+with separately justified embeddings/Qdrant, reusing the exact retrieval contract,
+datasets and metric implementation. Compare category-level gains and operational costs;
+do not assume Dense is necessary or superior. No Hybrid/RRF until later evidence supports it.

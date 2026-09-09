@@ -7,11 +7,13 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
@@ -83,6 +85,12 @@ class KnowledgeChunk(Base):
     __tablename__ = "knowledge_chunks"
     __table_args__ = (
         UniqueConstraint("revision_id", "chunk_index", name="uq_knowledge_chunk_index"),
+        # Match PostgreSQL deparser spelling; migration/query explicitly use pg_catalog.simple.
+        Index(
+            "ix_knowledge_chunks_fts",
+            text("to_tsvector('simple'::regconfig, content)"),
+            postgresql_using="gin",
+        ),
         CheckConstraint("chunk_index >= 0", name="index_nonnegative"),
         CheckConstraint("content_sha256 ~ '^[a-f0-9]{64}$'", name="hash_valid"),
         CheckConstraint(

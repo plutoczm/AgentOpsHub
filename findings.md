@@ -68,3 +68,9 @@ Database.transaction owns commit/rollback; repositories scope SQL and flush.
 JsonFormatter uses allowlists. No existing ADR convention. Separate scenario READMEs inspected; no source copied.
 Zero dependencies; PostgreSQL upsert and scoped row lock.
 References: https://www.postgresql.org/docs/current/explicit-locking.html and https://docs.sqlalchemy.org/en/20/dialects/postgresql.html#insert-on-conflict-upsert
+
+## Phase 6 discovery
+Clean e508330 accepted HEAD; dedicated Python 3.12.14/uv 0.12.10, no .venv.
+Existing PostgreSQL test image executes postgres --version as 17.6. Knowledge SQL must preserve latest revisions and trusted tenant/namespace. Phase 5 fixtures remain unchanged.
+FTS plan: pg_catalog.simple, plainto_tsquery AND, ts_rank_cd normalization 0, GIN expression index. Not BM25.
+Official references: https://www.postgresql.org/docs/17/textsearch-controls.html ; https://www.postgresql.org/docs/17/textsearch-tables.html ; https://www.postgresql.org/docs/17/textsearch-dictionaries.html

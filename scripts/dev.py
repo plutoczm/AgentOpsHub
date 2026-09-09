@@ -207,6 +207,7 @@ def main() -> int:
             "env-info",
             "lock",
             "test-integration",
+            "eval-retrieval",
             "db-upgrade",
             "db-current",
             "serve",
@@ -237,7 +238,9 @@ def main() -> int:
         "hooks-install": ["pre_commit", "install"],
     }
     try:
-        if args.command == "test-integration":
+        if args.command == "eval-retrieval":
+            run([sys.executable, str(ROOT / "scripts/test_postgres.py"), "--eval-retrieval"])
+        elif args.command == "test-integration":
             run([sys.executable, str(ROOT / "scripts/test_postgres.py")])
         elif args.command == "lock":
             run([uv_command(), "lock", "--python", sys.executable, "--no-python-downloads"])

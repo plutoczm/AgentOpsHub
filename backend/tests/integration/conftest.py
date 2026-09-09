@@ -15,7 +15,7 @@ from app.db.models import DocumentRevision, KnowledgeChunk, KnowledgeDocument, T
 from app.db.session import Database
 
 ROOT = Path(__file__).resolve().parents[3]
-REVISION = "20260909_01"
+REVISION = "20260909_02"
 
 
 @pytest.fixture(scope="session")

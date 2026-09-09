@@ -26,3 +26,16 @@ domain execution policy and deployment; no repository merge or Git submodule is 
 
 A2A integration requires a later adoption gate. No protocol package or domain-agent
 implementation is added in Phase 5. See integration-map.md.
+
+
+## Phase 6 shared retrieval contract
+
+The same KnowledgeRetriever request/result contract and deterministic evaluator now
+cover both namespaces. Each scenario has 8 synthetic documents and 24 fixed labeled
+queries, with source-level metrics and category errors recorded in
+../../evaluation/retrieval/measured-results.md.
+
+The implementation is PostgreSQL FTS with trusted tenant/namespace and current-revision
+SQL predicates. It performs no Agent invocation, knowledge_search tool dispatch or answer
+generation. Shared schema, retrieval/benchmark semantics and business datasets do not
+mean the independent repositories are remotely connected.

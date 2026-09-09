@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import secrets
@@ -97,7 +98,7 @@ def manual_http_probe(env: dict[str, str], compose: list[str]) -> None:
     assert env["POSTGRES_PASSWORD"] not in logs
 
 
-def main() -> int:
+def main(*, benchmark: bool = False) -> int:
     """Create run-owned resources; never accept an external database URL or reuse dev data."""
     run_id = uuid4().hex
     project = f"agentopshub-test-{run_id}"
@@ -134,6 +135,24 @@ def main() -> int:
         print(f"Test interpreter: {sys.executable}", flush=True)
         artifacts = ROOT / ".artifacts"
         artifacts.mkdir(exist_ok=True)
+        if benchmark:
+            migrated = subprocess.run(
+                [sys.executable, "-m", "alembic", "upgrade", "head"],
+                cwd=ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if migrated.returncode:
+                raise RuntimeError("Benchmark migration failed")
+            return subprocess.run(
+                [sys.executable, str(ROOT / "scripts/eval_retrieval.py")],
+                cwd=ROOT,
+                env=env,
+                check=False,
+                timeout=180,
+            ).returncode
         result = subprocess.run(
             [
                 sys.executable,
@@ -168,4 +187,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--eval-retrieval", action="store_true")
+    raise SystemExit(main(benchmark=parser.parse_args().eval_retrieval))

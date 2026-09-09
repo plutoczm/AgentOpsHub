@@ -537,3 +537,93 @@ Linux/Python 3.13 were not executed here. AnyIO compatibility ceiling remains un
 
 Final staged review: 37 task files; staged bytes match reviewed working content; Python AST parsing passed. Local dotenv credential values absent from staged files (checked without printing them). No environment/tool/artifact/data files or submodules staged. Accepted runtime/API source and dependency files unchanged. Working/index whitespace checks passed. python scripts/dev.py hooks passed Ruff lint, format, strict mypy and staged secret checks.
 One local Phase 5 commit is prepared: feat: add deterministic tenant-safe knowledge ingestion. Final SHA and clean status are verified after commit; no push and no Phase 6 work.
+
+## Phase 6
+Preflight matched accepted HEAD and clean state. Actual PostgreSQL 17.6 inspected using existing image with network disabled. A-AG proposal produced before implementation. Scope explicitly excludes Dense/Qdrant until Phase 7.
+
+Phase 6 early migration check: upgrade and downgrade succeeded, but alembic check detected an expression-index spelling difference. PostgreSQL deparses pg_catalog.simple regconfig as simple; ORM metadata now uses the reflected spelling while production query/migration retain the explicit catalog configuration. No drift check disabled. Initial 82 integration setup errors all stemmed from this single fixture failure; 348 tests passed.
+Benchmark corpus and labels fixed before first score measurement: 16 documents, 48 queries, seven balanced categories.
+
+Second integration pass: 501 passed, two test assumptions failed. Tiny scoped query legitimately preferred parent/key indexes; index eligibility probe now tests the exact FTS predicate without asserting the full-query plan. refund eligibility spans separate Phase 5 chunks and cannot AND-match one chunk; added a regression documenting this real limitation and used unopened 14 for positive provenance verification. Benchmark fixtures/queries/labels remain unchanged. Strict mypy fixed test annotations without rule exclusions.
+
+Contract review: shared score accepts any finite backend-specific float, including future negative dense similarities; no probability/range normalization assumption. Backend mapping failures now consistently use RetrievalInvariantError.
+First measured @5: SupportOps HitRate 14/21, Recall 13/21, MRR 14/21; DataCopilot all three 13/21. Paraphrase category is 0/4 in each scenario; ordinary wording 2/4 in each; all six no-answer cases returned empty. These observations justify evaluating, not presuming superiority of, Dense. Corpus/labels not tuned.
+
+Full intermediate PostgreSQL regression: 506 passed in 23.55s, migration upgrade/current/check/downgrade/reupgrade and HTTP probes passed. Added final Chinese-subword limitation and CLI target-rejection safety tests.
+Final non-DB check: Ruff lint/format and strict mypy (112 files) passed; 405 passed, 104 skipped in 6.47s. Conda sync and sync-check passed; Would make no changes; Compose validation passed.
+Second standalone benchmark command recreated the database and matched original stable rankings/metrics/corpus/manifest hashes. Per-run repetition also matched. Measured tables generated directly from the second standalone artifact; no fixture or label changed after first score measurement.
+
+## Phase 6 final verification
+
+Starting SHA: e508330a00039c1e3e63e1deadb0322c5396b817.
+Conda agentopshub, Python 3.12.14, executable D:/Anaconda3/envs/agentopshub/python.exe,
+prefix D:/Anaconda3/envs/agentopshub, uv 0.12.10, PostgreSQL 17.6, LangGraph 1.2.11.
+No .venv; no dependency declaration/lock changes or new runtime dependencies.
+All commands used the explicit Conda interpreter and accepted process-local PATH wrapper.
+
+| Executed command | Final observed result |
+| --- | --- |
+| python scripts/dev.py sync | Passed; dedicated Conda environment |
+| python scripts/dev.py sync-check | Passed; Would make no changes |
+| python scripts/dev.py check | Ruff lint/format, strict mypy (112 files), 405 passed / 104 explicitly skipped in 6.47s, whitespace checks passed |
+| python scripts/dev.py test-integration | 509 passed in 24.16s; no skips, real isolated PostgreSQL |
+| python scripts/dev.py compose-check | Passed |
+| python scripts/dev.py eval-retrieval | Two separate successful executions; each compares two passes; stable results match after DB recreation |
+| Alembic upgrade head / current (runner) | Passed from empty DB; 20260909_02 (head) |
+| Alembic downgrade base / upgrade head (runner) | Passed, only run-owned temporary DB |
+| Alembic check (runner) | No new upgrade operations detected |
+| Live Uvicorn HTTP probes (runner) | DB up health=200/ready=200; DB down health=200/ready=503 |
+
+Test composition: 405 non-integration tests, including 58 retrieval/evaluation unit tests;
+104 PostgreSQL integration tests, including 21 retrieval cases; total 509.
+Coverage: 97.37061769616027% combined statement/branch (display 97%);
+2004/2034 statements and 329/362 branches covered. No quality threshold or coverage rule weakened.
+FTS backend adapter has 100% application coverage. Suite elapsed time is not retrieval latency.
+
+Benchmark: 16 documents, 48 default chunks, 48 queries; each scenario 8 documents / 24 queries,
+including 21 answerable and 3 no-answer. Source-level metrics use raw top-K chunk slots,
+first-source-only binary gains and separate no-answer denominators. nDCG is implemented.
+SupportOps HitRate@1/3/5 = 0.666666667 throughout; Recall = 0.547619048/0.619047619/0.619047619;
+MRR = 0.666666667 throughout; nDCG = 0.666666667/0.629823542/0.629823542.
+DataCopilot HitRate/MRR/nDCG@1/3/5 = 0.619047619 throughout;
+Recall = 0.571428571/0.619047619/0.619047619.
+Combined HitRate/MRR = 0.642857143 throughout; Recall = 0.559523810/0.619047619/0.619047619;
+nDCG = 0.642857143/0.624435581/0.624435581.
+No-answer: 3/3 per scenario and 6/6 combined at all K, on easy out-of-domain negatives.
+
+Latest standalone first-pass sequential latency (ms):
+SupportOps N=24 mean=4.116646 median=4.084250 nearest-rank p95=4.609500.
+DataCopilot N=24 mean=4.314179 median=4.065650 p95=4.977300.
+Combined N=48 mean=4.215412 median=4.077650 p95=4.699000.
+These local small-corpus samples are not production latency, throughput or GIN speedup claims.
+Second-pass timings and all per-case signatures are preserved in ignored artifacts.
+
+Exact category tables and reproducibility identifiers: evaluation/retrieval/measured-results.md.
+Two command-created databases and repeated passes produced identical stable source/section/index/hash
+rankings and metrics. Fixtures/manifests stayed unchanged after first measurement.
+Labels are fixed development-time judgments, not independently human-adjudicated business truth.
+
+Observed failures: paraphrases 0/4 each, ordinary wording 2/4 each, unexpanded ETL acronym,
+strict AND terms across sections and lexical distractors. They justify evaluating Dense against
+the retained baseline, not assuming superiority. Simple lexical/heading representation fixes
+may address distinct errors too. Phase 7 must reuse contracts/datasets/metrics and separately
+justify embedding provider/model/Qdrant; no Hybrid/RRF until an independent later decision.
+
+Safety evidence: effective SQL binds query/tenant/namespace/top-K; WHERE applies tenant/namespace
+and correlated NOT EXISTS excludes stale revisions before LIMIT. Old-only terms return none;
+new terms return current IDs. Warm-map, cross-tenant and bidirectional namespace tests pass.
+SQL-special/injection-like queries cannot mutate scope or records. Real and fake backend errors
+stay safe. Raw records/JSON exclude query/chunk markers. No LLMGateway/AgentRuntime/ToolExecutor
+or external HTTP API was invoked by retrieval/evaluation tests. Public API and tool registry
+were not extended; accepted Phase 0-5 tests all pass.
+
+Known debt: English synthetic/manual labels, few easy no-answer negatives, weak Chinese tokenization,
+no stemming/synonym/acronym expansion, chunk-local AND/title ancestry limitations, historical GIN
+storage growth, existing driver/pool timeout rather than a new total search deadline, no RLS/auth,
+no explicit reindex/rebuild or metadata-only revision mechanism. Phase 5 hashing/idempotency
+semantics and historical migrations/ADR are preserved. No remote CI or Linux/Python 3.13 run.
+Phase 7, embeddings, Dense/Qdrant business retrieval, Hybrid/RRF, reranking, query rewriting,
+knowledge_search tool and RAG answer generation remain unimplemented. No push.
+
+Final staged/security review: 50 files; staged bytes match reviewed work; Python AST and dataset JSON parse; local dotenv values absent from staged content without printing them. Historical migrations/Phase 5 ADR, ingestion implementation/fixtures, Agent/Gateway/Tool/API source and dependency declarations/lock verified unchanged. Frozen dataset hashes still match the first benchmark. No logs, database state, generated benchmark JSON, local environments or credentials staged.
+python scripts/dev.py hooks passed Ruff lint, format check, strict mypy and staged secret guard. Working/staged git diff --check passed. One commit prepared: feat: add evaluated lexical retrieval baseline. No push; final SHA and clean state verified after commit.

@@ -4,7 +4,7 @@ Evaluation-driven enterprise Agent runtime/orchestration platform; SupportOps an
 
 ## 1. 状态与边界
 
-当前实现范围为 **Phase 0–5：Bootstrap、Conda/Persistence、内部 LLM Gateway、Tool Runtime、Bounded Agent Runtime、Deterministic Knowledge Ingestion**。本文区分现有实现与目标设计；
+当前实现范围为 **Phase 0–6：Bootstrap、Conda/Persistence、内部 LLM Gateway、Tool Runtime、Bounded Agent Runtime、Deterministic Knowledge Ingestion、Lexical Retrieval/Evaluation**。本文区分现有实现与目标设计；
 设计中的模块、表、接口和保障不代表已实现。项目是 production-oriented 原型，
 已实现 Tenant/Ticket 持久化，已实现内部有界 Agent；尚不具备认证或生产部署能力。
 
@@ -328,7 +328,7 @@ RAG 层存在后才将 knowledge_search 作为新的 READ_ONLY 工具显式注�
 RAG/knowledge_search、MCP、raw SQL 工具、认证、HITL UI 和持久化 tracing 均未实现。
 raw SQL 需要单独设计解析、租户约束、只读角色、表/语句白名单、期限/行数与审计，不在本阶段注册。
 
-## 6. Deterministic knowledge ingestion (implemented); retrieval (planned)
+## 6. Deterministic knowledge ingestion and lexical retrieval (implemented)
 
 Workflow First, Agent When Necessary. Deterministic where possible. Agentic where
 necessary. Hybrid by design. Models propose; deterministic systems validate, authorize
@@ -412,16 +412,103 @@ Privacy: fixed events, trusted namespace/request UUID, byte/chunk counts, safe e
 category and perf_counter duration. No source keys, titles, document/chunk text, SQL
 examples or raw parser/database errors enter ingestion logs. Errors use fixed messages.
 
-### Future retrieval evaluation boundary
+### Phase 6 retrieval boundary
 
-A trustworthy versioned corpus precedes RAG. Phase 6 compares lexical and dense baselines
-and introduces Qdrant explicitly; Phase 7 measures hybrid/RRF. Keep simpler baselines.
-Dense > lexical, hybrid > dense, reranking > hybrid and semantic > deterministic chunking
-are hypotheses, not defaults. No retrieval/index implementation exists in Phase 5.
-Versioned corpus/query splits, Recall@K/MRR/Hit Rate@K, latency, cost and tenant/provenance
-correctness should decide whether semantic/token-aware chunking or reranking adds value.
-Future indexing needs explicit lifecycle/rebuild/delete consistency; no cross-storage
-transaction, object store or durable ingestion job is claimed now.
+KnowledgeIngestionService -> PostgreSQL current corpus -> KnowledgeRetriever.search ->
+RetrievalResult -> backend-independent RetrievalEvaluator. Every stage is deterministic.
+SupportOps measures support-policy/workflow knowledge; DataCopilot measures SQL/schema/
+warehouse guidance. Both use the same engine and source-level metric semantics.
+The reference repositories remain independently deployable and are not remotely connected.
+
+KnowledgeRetrievalContext reuses strict trusted tenant/namespace/optional request UUID
+validation. KnowledgeSearchRequest contains only query/top_k: raw query <=512 Unicode
+characters before surrounding trim, nonblank, no invalid controls; top_k default 5,
+1..20. No tenant, namespace, revision, table or SQL/ranking input is accepted.
+
+PostgresFTSRetriever uses one fixed parameterized SELECT joining document/revision/chunk.
+Tenant and namespace are WHERE predicates. A correlated NOT EXISTS for a higher
+revision_number of the same document excludes stale history inside SQL before LIMIT.
+Latest means visible in that statement's PostgreSQL snapshot; a later concurrent commit
+is visible to a subsequent search. No Python post-filter provides authorization.
+Read sessions do not commit; existing connection/pool/driver limits apply.
+
+The explicit configuration is pg_catalog.simple. to_tsvector(chunk.content) matches
+plainto_tsquery(bound_query) with AND semantics; ts_rank_cd(vector, query, 0) uses
+PostgreSQL cover-density ranking with default weights and no normalization.
+This is PostgreSQL FTS, not BM25. Ordering: score DESC, source_key COLLATE "C",
+chunk_index, chunk UUID. Score has backend-specific units; the common DTO accepts any
+finite float without asserting probability, confidence or cross-backend comparability.
+
+Alembic 20260909_02 adds a GIN expression index on the exact simple-configuration vector.
+The index includes history but SQL excludes old versions. No ingestion/hash/schema
+revision semantics change. Metadata uses PostgreSQL's deparsed simple regconfig spelling;
+migration/query explicitly name pg_catalog.simple, and alembic check remains enabled.
+Small selective joins may use parent/key indexes; index eligibility is independently
+verified, with no invented performance gain.
+
+RetrievedChunk includes document/revision/chunk IDs, source_key, revision title, namespace,
+chunk index, section path, content/hash, normalized character bounds, finite score and
+one-based rank. RetrievalResult validates contiguous ranks, namespace and duplicate IDs.
+Output body fields are excluded from repr and logs. Request/backend/invariant errors
+carry fixed messages; raw SQL exceptions, query and chunk text are not logged.
+Only fixed events, trusted correlation/namespace, retriever, top-K, count and monotonic
+perf_counter duration enter the existing JSON whitelist.
+
+### Retrieval evaluation contract and measured limits
+
+app.evaluation contains typed manifest/case models, pure-Python metrics, a backend-neutral
+evaluate function and a small benchmark composition entry. It is not an Agent Harness.
+KnowledgeRetriever Protocol permits future Dense use without changing request/result/
+label/metric contracts. No dynamic plugins or additional evaluation dependencies.
+
+Versioned synthetic manifests declare source_key/title/local fixture path, namespace,
+query IDs/text/category, binary relevant source keys and rationale. No generated DB UUID
+is ground truth. Paths must exist within the explicit repository root; duplicate IDs,
+missing sources and inconsistent no-answer labels are rejected. The benchmark command
+accepts no arbitrary target DSN; it reuses a unique run-owned PostgreSQL runner.
+
+Each scenario uses 8 documents and 24 queries; 16 documents, 48 default chunks and 48
+queries in total. Six accepted Phase 5 fixtures are reused unchanged; ten are added only
+under evaluation/retrieval/fixtures. All are ingested through the generic service.
+Labels were fixed before scoring and have not been independently human-adjudicated.
+They establish inspectable synthetic comparisons, not business accuracy.
+
+At K=1/3/5, use the first K raw chunks. Repeated source chunks consume ranks but earn
+gain once. On nonempty relevant-source sets: HitRate indicates any hit; Recall divides
+unique relevant sources found by all labeled relevant sources; MRR uses reciprocal rank
+of the first relevant chunk, zero for misses; binary nDCG discounts first-source gains
+by log2(rank+1) and divides by ideal min(K, relevant-source count) gain.
+No-answer queries are excluded from those means and separately score whether top-K is
+empty. Unavailable denominators yield null. No chunk-level labels or precision metric.
+
+The same evaluator reports per-scenario, category and combined macro-query results.
+Each command repeats the benchmark; stable source/section/index/hash rankings and metrics
+must match while timing varies. Generated JSON records manifest/corpus hashes, database
+version, retriever/config, Git HEAD/dirty state, case signatures and both timing passes
+under ignored .artifacts. Concise measured results are committed in
+[evaluation/retrieval/measured-results.md](evaluation/retrieval/measured-results.md).
+Local mean/median/nearest-rank p95 describes sequential samples, not production SLOs.
+
+Observed paraphrase HitRate@5 is 0/4 in each scenario; ordinary wording is 2/4 each.
+simple lacks stemming, synonym/acronym expansion and strong Chinese segmentation.
+AND terms must coexist in one chunk: exact refund eligibility can miss when the terms
+are split between title and subsection. Six easy no-answer negatives all returned empty;
+this does not validate enterprise answerability. These are measurable reasons to evaluate
+Dense, alongside simpler lexical/heading representation experiments, not proof it wins.
+
+### Future boundaries and inherited debt
+
+Phase 7: separately justify an embedding abstraction/provider/model and Qdrant Dense
+baseline using the same contracts/data/metrics. Preserve lexical for direct comparison.
+Phase 8: analyze lexical versus Dense failures and decide whether Hybrid/RRF adds value.
+Reranking, Context Engineering, Memory, Skills, MCP, Agent Harness, grounding and tracing
+remain separately gated. No knowledge_search tool, Agent routing change, query rewriting,
+LLM-as-judge, public search endpoint or RAG answer generation is implemented.
+
+Phase 5 normalized-content hashing is unchanged: title/media/config-only edits remain
+UNCHANGED. Query result titles come from revision snapshots. A later parser/chunker
+change needs an explicit rebuild/reindex mechanism; metadata-only revision semantics
+need an independent decision. Do not rewrite document history as an index version hack.
 
 ## 7. LLM Gateway（Phase 2 已实现，未连接真实模型）
 
@@ -510,7 +597,7 @@ prompt injection protection 是多层约束：不可信文档/工具输出与系
 工具参数验证、服务端授权、审批以及 adversarial eval。无法承诺绝对阻止所有 prompt injection。
 后续增加文件上传限制、SSRF 防护、输出 schema 验证、敏感信息检测与超预算终止。
 
-## 9. Observability 与评测（JSON 日志和摄取基线已实现；检索评测/tracing 未实现）
+## 9. Observability 与评测（JSON 日志、摄取及词法检索评测基线已实现；tracing 未实现）
 
 未来 tracing 使用 OpenTelemetry span 贯穿 API/graph/tool/retrieval/gateway/DB；
 用 request_id/run_id 关联，正文采集默认关闭。指标包括真实请求延迟、错误分类、重试次数、
@@ -526,7 +613,7 @@ answer relevance 可人工评分或显式标记 LLM judge，并记录 rubric、j
 lexical / dense / hybrid / hybrid+reranking 比较固定语料、query split、embedding、K、硬件及配置，
 记录 git SHA、lockfile hash、数据 hash、seed、warmup、重复次数、并发、计时边界、原始输出和费用。
 latency 报告样本数量及分位数的定义，失败样本保留；README 数字须能追溯到运行 artifact。
-目前没有 benchmark 数据、检索结果或性能声明。
+Phase 6 已有明确标注的 synthetic retrieval benchmark 与实测结果；没有生产数据集或生产性能声明。
 
 ## 10. 本地与生产边界
 

@@ -1,8 +1,8 @@
 # Evaluation boundary
 
 Phase 5 implements a deterministic ingestion evaluation baseline through committed
-synthetic fixtures and tests. A separate executable evaluation distribution and
-retrieval benchmarks remain planned.
+synthetic fixtures and tests. Phase 6 now adds a focused retrieval evaluator and PostgreSQL FTS lexical baseline;
+a separate evaluation distribution and full Agent Harness remain planned.
 
 Run from the accepted isolated Python/Conda environment:
 
@@ -37,19 +37,30 @@ LLMGateway, AgentRuntime and ToolExecutor are patched to fail if ingestion invok
 These are reproducibility and boundary checks on fictional documents, not business
 accuracy scores, service SLOs, retrieval results or remote scenario interoperability.
 
-## Planned retrieval experiments
+## Phase 6 retrieval evaluation (implemented)
 
-Phase 6 compares a lexical baseline and dense baseline with explicit Qdrant integration.
-Phase 7 evaluates hybrid fusion/RRF, retaining each simpler baseline. Reranking and
-semantic/token-aware chunking need separate measured justification.
-Do not assume dense > lexical, hybrid > dense, reranking > hybrid, or semantic >
-deterministic chunking.
+Run `python scripts/dev.py eval-retrieval` for an isolated PostgreSQL synthetic benchmark.
+It ingests 16 documents (8 per scenario), evaluates 48 labeled queries (24 per scenario),
+reports source-level HitRate/Recall/MRR/binary nDCG at 1/3/5 and no-answer accuracy,
+and repeats rankings/metrics to verify determinism. This is PostgreSQL FTS, not BM25.
 
-Use a fixed versioned corpus/query split and retain raw outputs. Measure Recall@K,
-MRR, Hit Rate@K, latency, ingestion/storage cost and provenance/tenant correctness.
-Agree thresholds before selecting extra complexity. Context Engineering begins only
-after retrieval baselines justify it.
+[Dataset and metric contract](retrieval/README.md) describes raw chunk-slot deduplication,
+denominators and fixture validation. [Measured results](retrieval/measured-results.md)
+records actual aggregate/category metrics and local latency.
 
-The future evaluation package may use evaluation/pyproject.toml,
-evaluation/src/agentopshub_eval and evaluation/tests, calling public internal
-retrieval/Agent contracts without importing persistence internals.
+Observed @5 HitRate: SupportOps 14/21, DataCopilot 13/21; Recall 13/21 each.
+Both paraphrase groups are 0/4 and ordinary wording groups 2/4. Six easy no-answer queries
+returned empty. These are synthetic baseline findings, not production relevance/SLO claims.
+Phase 5's original six-document/18-chunk ingestion regression above remains unchanged.
+
+## Planned comparisons
+
+Phase 7 evaluates Dense Retrieval + Qdrant using the SAME retrieval contracts, frozen
+datasets and pure metric implementation. An embedding abstraction and model/provider
+choice require explicit adoption evidence. Keep the lexical baseline; no Hybrid/RRF yet.
+Phase 8 analyzes errors and decides whether fusion adds measurable value. Reranking,
+Context Engineering and further Agent capabilities follow only after evidence.
+
+Do not assume dense > lexical, hybrid > dense, reranking > hybrid or semantic >
+deterministic chunking. Rebuild/reindex and metadata-only version semantics remain
+explicit future decisions; do not silently change Phase 5 hashes or chunk configuration.

@@ -28,3 +28,16 @@ AgentOpsHub does not infer permission from a model or document.
 Repositories remain separate for independent deployment, domain ownership, tests and
 versions. Future A2A is a candidate boundary requiring a separate adoption decision;
 Phase 5 does not install or implement it. See integration-map.md.
+
+
+## Phase 6 shared retrieval contract
+
+The same KnowledgeRetriever request/result contract and deterministic evaluator now
+cover both namespaces. Each scenario has 8 synthetic documents and 24 fixed labeled
+queries, with source-level metrics and category errors recorded in
+../../evaluation/retrieval/measured-results.md.
+
+The implementation is PostgreSQL FTS with trusted tenant/namespace and current-revision
+SQL predicates. It performs no Agent invocation, knowledge_search tool dispatch or answer
+generation. Shared schema, retrieval/benchmark semantics and business datasets do not
+mean the independent repositories are remotely connected.

@@ -1,0 +1,264 @@
+{
+  "name": "datacopilot-synthetic-v1",
+  "version": "1.0.0",
+  "namespace": "datacopilot",
+  "description": "Synthetic benchmark. Manually specified source-level binary labels; not customer data.",
+  "documents": [
+    {
+      "source_key": "sql_standards.md",
+      "title": "sql standards",
+      "path": "examples/knowledge/datacopilot/sql_standards.md"
+    },
+    {
+      "source_key": "warehouse_conventions.md",
+      "title": "warehouse conventions",
+      "path": "examples/knowledge/datacopilot/warehouse_conventions.md"
+    },
+    {
+      "source_key": "schema_guidelines.md",
+      "title": "schema guidelines",
+      "path": "examples/knowledge/datacopilot/schema_guidelines.md"
+    },
+    {
+      "source_key": "query_safety.md",
+      "title": "query safety",
+      "path": "evaluation/retrieval/fixtures/datacopilot/query_safety.md"
+    },
+    {
+      "source_key": "metric_definitions.md",
+      "title": "metric definitions",
+      "path": "evaluation/retrieval/fixtures/datacopilot/metric_definitions.md"
+    },
+    {
+      "source_key": "pipeline_recovery.md",
+      "title": "pipeline recovery",
+      "path": "evaluation/retrieval/fixtures/datacopilot/pipeline_recovery.md"
+    },
+    {
+      "source_key": "access_control.md",
+      "title": "access control",
+      "path": "evaluation/retrieval/fixtures/datacopilot/access_control.md"
+    },
+    {
+      "source_key": "data_quality.md",
+      "title": "data quality",
+      "path": "evaluation/retrieval/fixtures/datacopilot/data_quality.md"
+    }
+  ],
+  "cases": [
+    {
+      "query_id": "datacopilot-01",
+      "query": "SQL standards",
+      "category": "exact",
+      "relevant_sources": [
+        "sql_standards.md"
+      ],
+      "rationale": "Baseline SQL guidance."
+    },
+    {
+      "query_id": "datacopilot-02",
+      "query": "warehouse conventions",
+      "category": "exact",
+      "relevant_sources": [
+        "warehouse_conventions.md"
+      ],
+      "rationale": "Warehouse layer conventions."
+    },
+    {
+      "query_id": "datacopilot-03",
+      "query": "primary keys",
+      "category": "exact",
+      "relevant_sources": [
+        "schema_guidelines.md"
+      ],
+      "rationale": "Schema constraints use primary keys."
+    },
+    {
+      "query_id": "datacopilot-04",
+      "query": "net revenue",
+      "category": "exact",
+      "relevant_sources": [
+        "metric_definitions.md"
+      ],
+      "rationale": "Revenue definition and exclusions."
+    },
+    {
+      "query_id": "datacopilot-05",
+      "query": "cancel a runaway query",
+      "category": "ordinary",
+      "relevant_sources": [
+        "query_safety.md"
+      ],
+      "rationale": "Timeout enforcement."
+    },
+    {
+      "query_id": "datacopilot-06",
+      "query": "how do I resume a failed pipeline",
+      "category": "ordinary",
+      "relevant_sources": [
+        "pipeline_recovery.md"
+      ],
+      "rationale": "Checkpoint recovery in ordinary phrasing."
+    },
+    {
+      "query_id": "datacopilot-07",
+      "query": "check primary key uniqueness",
+      "category": "ordinary",
+      "relevant_sources": [
+        "data_quality.md"
+      ],
+      "rationale": "Uniqueness validation before publication."
+    },
+    {
+      "query_id": "datacopilot-08",
+      "query": "who can read restricted tables",
+      "category": "ordinary",
+      "relevant_sources": [
+        "access_control.md"
+      ],
+      "rationale": "Warehouse permissions in ordinary phrasing."
+    },
+    {
+      "query_id": "datacopilot-09",
+      "query": "AST",
+      "category": "acronym",
+      "relevant_sources": [
+        "sql_standards.md",
+        "query_safety.md"
+      ],
+      "rationale": "SQL validation through abstract syntax tree."
+    },
+    {
+      "query_id": "datacopilot-10",
+      "query": "RBAC",
+      "category": "acronym",
+      "relevant_sources": [
+        "access_control.md"
+      ],
+      "rationale": "Role-based warehouse permissions."
+    },
+    {
+      "query_id": "datacopilot-11",
+      "query": "ETL restart",
+      "category": "acronym",
+      "relevant_sources": [
+        "pipeline_recovery.md"
+      ],
+      "rationale": "Acronym absent from expanded extract-transform-load wording."
+    },
+    {
+      "query_id": "datacopilot-12",
+      "query": "avoid counting the same sale twice",
+      "category": "paraphrase",
+      "relevant_sources": [
+        "pipeline_recovery.md",
+        "data_quality.md"
+      ],
+      "rationale": "Idempotency and duplicate-record checks."
+    },
+    {
+      "query_id": "datacopilot-13",
+      "query": "earnings after customer reimbursements",
+      "category": "paraphrase",
+      "relevant_sources": [
+        "metric_definitions.md"
+      ],
+      "rationale": "Net revenue excluding refunds."
+    },
+    {
+      "query_id": "datacopilot-14",
+      "query": "keep a report from running forever",
+      "category": "paraphrase",
+      "relevant_sources": [
+        "query_safety.md",
+        "sql_standards.md"
+      ],
+      "rationale": "Timeout guidance expressed conceptually."
+    },
+    {
+      "query_id": "datacopilot-15",
+      "query": "fill yesterday's missing events",
+      "category": "paraphrase",
+      "relevant_sources": [
+        "pipeline_recovery.md"
+      ],
+      "rationale": "Backfilling late arrivals."
+    },
+    {
+      "query_id": "datacopilot-16",
+      "query": "SQL row limit timeout",
+      "category": "multi_keyword",
+      "relevant_sources": [
+        "sql_standards.md",
+        "query_safety.md"
+      ],
+      "rationale": "Both documents describe bounded read-only execution."
+    },
+    {
+      "query_id": "datacopilot-17",
+      "query": "ODS DWD DWS ADS",
+      "category": "multi_keyword",
+      "relevant_sources": [
+        "warehouse_conventions.md"
+      ],
+      "rationale": "Warehouse layer abbreviations."
+    },
+    {
+      "query_id": "datacopilot-18",
+      "query": "source destination row counts",
+      "category": "multi_keyword",
+      "relevant_sources": [
+        "data_quality.md"
+      ],
+      "rationale": "Reconciliation after loading."
+    },
+    {
+      "query_id": "datacopilot-19",
+      "query": "schema SQL permission",
+      "category": "distractor",
+      "relevant_sources": [
+        "access_control.md"
+      ],
+      "rationale": "SQL approval does not grant table access."
+    },
+    {
+      "query_id": "datacopilot-20",
+      "query": "refunds revenue discounts",
+      "category": "distractor",
+      "relevant_sources": [
+        "metric_definitions.md"
+      ],
+      "rationale": "Refund terminology means analytical exclusions here."
+    },
+    {
+      "query_id": "datacopilot-21",
+      "query": "replay duplicate row counts",
+      "category": "distractor",
+      "relevant_sources": [
+        "pipeline_recovery.md"
+      ],
+      "rationale": "Batch recovery needs deduplication and reconciliation."
+    },
+    {
+      "query_id": "datacopilot-22",
+      "query": "GPU driver installation",
+      "category": "no_answer",
+      "relevant_sources": [],
+      "rationale": "No GPU operations runbook."
+    },
+    {
+      "query_id": "datacopilot-23",
+      "query": "Kafka broker retention",
+      "category": "no_answer",
+      "relevant_sources": [],
+      "rationale": "No broker retention settings in the corpus."
+    },
+    {
+      "query_id": "datacopilot-24",
+      "query": "quarterly sales forecast model",
+      "category": "no_answer",
+      "relevant_sources": [],
+      "rationale": "No forecast model or numerical forecast documented."
+    }
+  ]
+}
