@@ -39,11 +39,18 @@ class ModelPricing(Contract):
     source: str | None = Field(default=None, max_length=256, pattern=r"^[A-Za-z0-9_./:-]+$")
 
 
+class DeepSeekOptions(Contract):
+    """Typed DeepSeek controls; current live-eval support is non-thinking only."""
+
+    thinking_mode: Literal["disabled"]
+
+
 class ProviderProfile(Contract):
     """A cloud/local/private HTTP profile, with no eager endpoint probing."""
 
     name: Identifier
     kind: Literal["deepseek", "qwen", "generic"] = "generic"
+    deepseek_options: DeepSeekOptions | None = None
     base_url: str = Field(repr=False)
     default_model: Identifier
     enabled: bool = True
@@ -95,6 +102,8 @@ class ProviderProfile(Contract):
         """Named vendor presets retain required authentication; absence fails on invocation."""
         if self.kind in {"deepseek", "qwen"} and not self.api_key_required:
             raise ValueError("Named cloud profiles require API-key authentication")
+        if self.kind != "deepseek" and self.deepseek_options is not None:
+            raise ValueError("DeepSeek generation options require kind=deepseek")
         if self.api_key is not None:
             secret = self.api_key.get_secret_value()
             if any(secret in value for value in (self.name, self.default_model, self.base_url)):

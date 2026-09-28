@@ -22,6 +22,17 @@ def _print_preflight(route: str, mode: str) -> tuple[int, bool]:
         print(f"API_KEY_CONFIGURED = {'YES' if report.api_key_configured else 'NO'}")
         return 0, False
     if report.status.value == "blocked":
+        issue_set = set(report.issues)
+        if "api_key_required" in issue_set and issue_set <= {
+            "api_key_required",
+            "live_opt_in_required",
+        }:
+            print("LIVE PROVIDER CONFIGURATION = VALID EXCEPT API KEY")
+            print("API_KEY_CONFIGURED = NO")
+            if "live_opt_in_required" in issue_set:
+                print("LIVE_OPT_IN = OFF")
+            print("LIVE EVALUATION PREFLIGHT = BLOCKED ON API KEY")
+            return 0, False
         print("LIVE EVALUATION PREFLIGHT = BLOCKED")
         return 1, False
     return 0, True

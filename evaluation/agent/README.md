@@ -65,4 +65,5 @@ completeness false.
 
 The Phase 7B0 harness run does not issue a real model call or claim live accuracy. Phase 7B1
 requires separate user authorization after provider/model/pricing and call/token bounds have
-been reviewed.
+been reviewed. The proposed DeepSeek non-thinking adapter boundary and official sources are
+recorded in [decision 0004](../../docs/decisions/0004-deepseek-v4-flash-nonthinking.md).

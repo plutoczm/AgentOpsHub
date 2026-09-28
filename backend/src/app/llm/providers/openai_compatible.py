@@ -98,7 +98,12 @@ def _status_error(status: int, retry_after: str | None) -> LLMError:
     return error(http_status=status, retry_after=delay)
 
 
-def _serialize(request: LLMRequest, model: str, capabilities: Capabilities) -> JsonObject:
+def _serialize(
+    request: LLMRequest,
+    model: str,
+    capabilities: Capabilities,
+    profile: ProviderProfile,
+) -> JsonObject:
     messages: list[JsonValue] = []
     for message in request.messages:
         item: JsonObject = {"role": message.role.value, "content": message.content}
@@ -123,6 +128,11 @@ def _serialize(request: LLMRequest, model: str, capabilities: Capabilities) -> J
         "max_tokens": request.max_output_tokens,
         "stream": False,
     }
+    if profile.kind == "deepseek":
+        options = profile.deepseek_options
+        if options is None:
+            raise ConfigurationError()
+        payload["thinking"] = {"type": options.thinking_mode}
     if request.temperature is not None:
         payload["temperature"] = request.temperature
     if request.stop:
@@ -197,7 +207,7 @@ class OpenAICompatibleProvider:
         if self.profile.api_key is not None:
             headers["Authorization"] = "Bearer " + self.profile.api_key.get_secret_value()
         try:
-            payload = _serialize(request, model, capabilities)
+            payload = _serialize(request, model, capabilities, self.profile)
         except (ValueError, TypeError):
             raise BadRequestError() from None
         try:

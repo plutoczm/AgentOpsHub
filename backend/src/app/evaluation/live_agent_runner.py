@@ -248,6 +248,8 @@ async def run_offline_evaluation(
             profile_name=profile.name,
             model=profile.default_model,
             deployment=profile.deployment_type,
+            thinking_mode=None,
+            non_thinking_mode=None,
             pricing_source=None,
             pricing_date=None,
         )
@@ -291,10 +293,18 @@ async def run_live_evaluation(
     gateway = LLMGateway(settings.llm)
     limits = AgentLimits()
     selected_route = settings.llm.routes[route_name]
-    temperature_supported = all(
-        (target.capabilities or settings.llm.profiles[target.provider].capabilities).temperature
-        for target in selected_route.candidates
-    )
+    temperature_supported = True
+    for target in selected_route.candidates:
+        profile = settings.llm.profiles[target.provider]
+        capabilities = target.capabilities or profile.capabilities
+        if not capabilities.temperature:
+            temperature_supported = False
+            break
+        if profile.kind == "deepseek":
+            options = profile.deepseek_options
+            if options is None or options.thinking_mode != "disabled":
+                temperature_supported = False
+                break
     policy = AgentModelPolicy(temperature=0 if temperature_supported else None)
     sensitive_values = tuple(
         profile.api_key.get_secret_value()
@@ -345,6 +355,16 @@ async def run_live_evaluation(
             profile_name=profile.name,
             model=exact_model,
             deployment=profile.deployment_type,
+            thinking_mode=(
+                profile.deepseek_options.thinking_mode
+                if profile.deepseek_options is not None
+                else None
+            ),
+            non_thinking_mode=(
+                profile.kind == "deepseek"
+                and profile.deepseek_options is not None
+                and profile.deepseek_options.thinking_mode == "disabled"
+            ),
             pricing_source=pricing.source if pricing is not None else None,
             pricing_date=pricing.effective_date if pricing is not None else None,
             preflight=preflight,
@@ -819,6 +839,8 @@ def _build_artifact(
     profile_name: str,
     model: str,
     deployment: DeploymentType,
+    thinking_mode: str | None,
+    non_thinking_mode: bool | None,
     pricing_source: str | None,
     pricing_date: date | None,
     preflight: ProviderPreflight | None = None,
@@ -852,6 +874,8 @@ def _build_artifact(
         agent_limits=limits,
         gateway_retry_attempts=gateway_config.retry.max_attempts,
         gateway_timeout_seconds=gateway_config.total_timeout,
+        thinking_mode=thinking_mode,
+        non_thinking_mode=non_thinking_mode,
         pricing_source=pricing_source,
         pricing_effective_date=pricing_date,
     )

@@ -11,6 +11,10 @@ def validate_target(
     """Reject absent credentials and unsupported features before a transport attempt."""
     if not profile.enabled or (profile.api_key_required and profile.api_key is None):
         raise ConfigurationError()
+    if profile.kind == "deepseek" and (
+        profile.deepseek_options is None or profile.deepseek_options.thinking_mode != "disabled"
+    ):
+        raise UnsupportedCapabilityError()
     if request.tools and not capabilities.tool_calling:
         raise UnsupportedCapabilityError()
     if request.temperature is not None and not capabilities.temperature:

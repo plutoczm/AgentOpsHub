@@ -161,6 +161,8 @@ class ProviderPreflight(Contract):
     exact_model_id: str | None = None
     deployment_type: DeploymentType | None = None
     tool_calling: bool | None = None
+    thinking_mode: str | None = None
+    non_thinking_mode: bool | None = None
     api_key_configured: bool
     pricing_configured: bool
     pricing_source: str | None = None
@@ -179,6 +181,7 @@ class ProviderPreflight(Contract):
     max_provider_calls: int
     maximum_generated_tokens: int
     input_token_upper_bound_known: bool = False
+    output_side_cost_upper_bound: Decimal | None = None
     projected_cost_upper_bound: Decimal | None = None
     suggested_observed_cost_stop_usd: Decimal = Decimal("10.00")
     currency: str | None = None
@@ -202,9 +205,12 @@ def build_provider_preflight(
     issues: list[str] = []
     candidates: list[tuple[ProviderProfile, str, bool, ModelPricing | None]] = []
     temperature_capabilities: list[bool] = []
+    deepseek_non_thinking_capabilities: list[bool] = []
     if route is None:
         issues.append("route_missing")
     else:
+        if len(route.candidates) != 1:
+            issues.append("single_candidate_route_required")
         for target in route.candidates:
             profile = config.profiles.get(target.provider)
             if profile is None:
@@ -213,6 +219,14 @@ def build_provider_preflight(
             model = target.model or profile.default_model
             capabilities = target.capabilities or profile.capabilities
             temperature_capabilities.append(capabilities.temperature)
+            if profile.kind == "deepseek":
+                non_thinking = bool(
+                    profile.deepseek_options is not None
+                    and profile.deepseek_options.thinking_mode == "disabled"
+                )
+                deepseek_non_thinking_capabilities.append(non_thinking)
+                if not non_thinking:
+                    issues.append("deepseek_non_thinking_required")
             candidates.append(
                 (profile, model, capabilities.tool_calling, profile.pricing.get(model))
             )
@@ -255,29 +269,31 @@ def build_provider_preflight(
     currencies = {pricing.currency for _, _, _, pricing in candidates if pricing is not None}
     resolved_temperature = (
         model_policy.temperature
-        if not temperature_capabilities or all(temperature_capabilities)
+        if candidates and all(temperature_capabilities) and all(deepseek_non_thinking_capabilities)
         else None
     )
+    output_side_bound: Decimal | None = None
     projected: Decimal | None = None
-    if (
-        candidates
-        and len(currencies) == 1
-        and all(
-            profile.deployment_type is not DeploymentType.CLOUD
-            or (pricing is not None and pricing.input_per_million == 0)
-            for profile, _, _, pricing in candidates
+    output_rates = [
+        pricing.output_per_million for _, _, _, pricing in candidates if pricing is not None
+    ]
+    input_rates = [
+        pricing.input_per_million for _, _, _, pricing in candidates if pricing is not None
+    ]
+    if pricing_configured and len(currencies) == 1 and output_rates:
+        output_side_bound = (
+            max(output_rates)
+            * Decimal(model_policy.max_output_tokens)
+            * Decimal(max_calls)
+            / Decimal(1_000_000)
         )
+    if (
+        pricing_configured
+        and len(currencies) == 1
+        and output_side_bound is not None
+        and all(rate == 0 for rate in input_rates)
     ):
-        output_costs = [
-            pricing.output_per_million for _, _, _, pricing in candidates if pricing is not None
-        ]
-        if output_costs:
-            projected = (
-                max(output_costs)
-                * Decimal(model_policy.max_output_tokens)
-                * Decimal(max_calls)
-                / Decimal(1_000_000)
-            )
+        projected = output_side_bound
     status = (
         PreflightStatus.REQUIRED
         if "route_missing" in issues or "provider_profile_missing" in issues or not candidates
@@ -293,6 +309,18 @@ def build_provider_preflight(
         exact_model_id=primary[1] if primary else None,
         deployment_type=primary[0].deployment_type if primary else None,
         tool_calling=primary[2] if primary else None,
+        thinking_mode=(
+            primary[0].deepseek_options.thinking_mode
+            if primary and primary[0].deepseek_options is not None
+            else None
+        ),
+        non_thinking_mode=(
+            primary[0].kind == "deepseek"
+            and primary[0].deepseek_options is not None
+            and primary[0].deepseek_options.thinking_mode == "disabled"
+            if primary
+            else None
+        ),
         api_key_configured=key_configured,
         pricing_configured=pricing_configured,
         pricing_source=primary[3].source if primary and primary[3] else None,
@@ -312,6 +340,7 @@ def build_provider_preflight(
         gateway_attempts_per_candidate=attempts,
         max_provider_calls=max_calls,
         maximum_generated_tokens=max_tokens,
+        output_side_cost_upper_bound=output_side_bound,
         projected_cost_upper_bound=projected,
         currency=next(iter(currencies)) if len(currencies) == 1 else None,
         issues=tuple(dict.fromkeys(issues)),
@@ -557,6 +586,8 @@ class AgentEvaluationManifest(Contract):
     agent_limits: AgentLimits
     gateway_retry_attempts: int
     gateway_timeout_seconds: float
+    thinking_mode: str | None = None
+    non_thinking_mode: bool | None = None
     pricing_source: str | None = None
     pricing_effective_date: date | None = None
     run_timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
