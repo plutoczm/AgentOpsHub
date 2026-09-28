@@ -2,9 +2,9 @@
 
 Evaluation-driven enterprise Agent runtime/orchestration platform, with SupportOps and DataCopilot reference scenarios.
 
-**Implemented through Phase 7A:** tenant-safe typed tools, bounded LangGraph runtime, deterministic knowledge ingestion, PostgreSQL FTS retrieval, bounded evidence context, and an internal knowledge-search Agent loop.
+**Implemented through Phase 7B0:** tenant-safe typed tools, bounded LangGraph runtime, deterministic knowledge ingestion, PostgreSQL FTS retrieval, bounded evidence context, an internal knowledge-search Agent loop, and an offline-capable evaluation harness with run-local privacy-safe traces and provider/budget preflight.
 Models propose; trusted application context and deterministic executors validate, authorize, and perform work.
-There is no business CRUD HTTP API, authentication, public Agent endpoint, frontend, MCP, live-model evaluation, or persistent Agent tracing.
+There is no business CRUD HTTP API, authentication, public Agent endpoint, frontend, MCP, or live-model accuracy result. Phase 7B0 made no remote model call; traces are run-local and metadata-only.
 PostgreSQL FTS remains the lexical baseline. Redis and Qdrant are not used by the knowledge Agent path.
 
 
@@ -26,9 +26,11 @@ AgentOpsHub
      +-- Schema / SQL / Analysis
 ```
 
-**Implemented through Phase 7A:** shared architecture contracts, deterministic ingestion,
+**Implemented through Phase 7B0:** shared architecture contracts, deterministic ingestion,
 trusted lexical retrieval, bounded evidence context, and an internal knowledge-search Agent
-loop; the frozen Phase 6 benchmark has 16 synthetic documents and 48 labeled queries.
+loop; the frozen Phase 6 benchmark has 16 synthetic documents and 48 labeled queries. A
+separate 17-case Phase 7B dataset defines later live-agent measurements without claiming
+live-model quality.
 **Planned:** remote domain-agent integration and MCP/A2A/AG-UI boundaries.
 The three repositories remain independent; no full source copy, repository merge,
 Git submodule or remote protocol integration was introduced.
@@ -145,6 +147,38 @@ outcomes and fingerprints. It demonstrates integration correctness, not live-mod
 selection, answer quality, or prompt-injection robustness. See [dataset](evaluation/knowledge-agent/README.md),
 [measured results](evaluation/knowledge-agent/measured-results.md), and
 [decision 0003](docs/decisions/0003-bounded-agent-context.md).
+
+## Live-agent evaluation harness and minimal trace (Phase 7B0)
+
+Phase 7B0 adds `evaluation/agent/phase7b-live-agent-v1.json`, deterministic case graders,
+bounded run-local traces, stable dataset/prompt/tool-schema fingerprints, and a local-only
+provider/budget preflight. The grader measures tool selection, argument validation, evidence
+retrieval/source linkage, no-evidence refusal, unsupported claims, policy denial, and scope
+invariants. It does not use an LLM judge.
+
+```text
+python scripts/dev.py eval-agent-live --preflight
+python scripts/dev.py eval-agent-live --offline
+```
+
+Preflight does not probe a provider. The offline command uses an isolated disposable PostgreSQL
+database and the existing `AgentRuntime -> LLMGateway -> OpenAICompatibleProvider` path with
+`httpx2.MockTransport`; it is labeled `HARNESS_VALIDATION`, not a live model result. Generated
+metadata-only output is written to the ignored `.artifacts/phase7b-live-agent.json`.
+
+Future smoke or measured execution requires the exact environment opt-in
+`AGENTOPSHUB_EVAL_LIVE_LLM=true`, a configured route/provider with native tool calling, a
+present key when required, and cloud pricing with a configured source and effective date. Smoke covers 4 cases once; measured covers
+all 17 cases twice. Default limits are 8 model turns, 16 proposed tool calls, 60 seconds, and
+512 output tokens per call. The suggested USD 10 threshold is an observed-cost stop point,
+not a provider billing hard cap. No real model baseline exists yet; a separate Phase 7B1
+authorization is required before using either live mode.
+
+Trace events contain run/request/case identifiers and allowlisted provider, model, attempt,
+tool, timing, usage/cost, context fingerprint, and retriever metadata. They never store prompts,
+messages, tool arguments/results, evidence, tenant UUIDs, keys, authorization headers, or DB URLs.
+Unknown usage/cost remains null; configured-price estimates are not invoices. See
+[Phase 7B evaluation contract](evaluation/agent/README.md).
 
 ## 本地 Windows 推荐环境：Conda + uv
 

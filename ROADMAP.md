@@ -1,7 +1,7 @@
 # AgentOpsHub Roadmap
 
 每阶段独立验收、小步提交。本文为计划，不将未来能力描述为已完成。
-Phase 0-6 accepted. Phase 7A Bounded Context Engineering + Knowledge Agent Loop is implemented and locally validated. Phase 7B has not started.
+Phase 0-6 accepted. Phase 7A Bounded Context Engineering + Knowledge Agent Loop and Phase 7B0 evaluation harness/preflight are implemented and locally validated. No real model baseline has run.
 
 | 阶段 | 目标 | 可验证的退出条件 |
 | --- | --- | --- |
@@ -13,7 +13,8 @@ Phase 0-6 accepted. Phase 7A Bounded Context Engineering + Knowledge Agent Loop 
 | Phase 5 complete | Deterministic Knowledge Ingestion & Reference Scenario Foundation | Trusted tenant/namespace, UTF-8 parsing/chunking, immutable revisions, idempotency, provenance, real PostgreSQL isolation/concurrency and synthetic scenario corpora |
 | Phase 6 complete | Retrieval Evaluation Foundation + Deterministic Lexical Baseline | PostgreSQL FTS, trusted/latest-only SQL, fixed 16-document/48-query synthetic benchmark, reproducible metrics and observed failure analysis |
 | Phase 7A complete | Bounded Context Engineering + Knowledge Agent Loop | Trusted runtime namespace, query-only READ_ONLY tool, bounded provenance-preserving evidence, real PostgreSQL and deterministic Agent integration evaluation |
-| Phase 7B next | Budgeted Live Agent Task Evaluation + Minimal Agent Tracing | Explicit live-model budget, task outcome rubric, privacy-safe minimal tracing; separate model quality from scripted integration correctness |
+| Phase 7B0 complete | Live Agent Evaluation Harness + Minimal Privacy-Safe Trace + Provider/Budget Preflight | Versioned 17-case dataset, deterministic graders, offline gateway/provider harness, bounded run-local metadata traces, no live model call |
+| Phase 7B1 next | Authorized Live Model Baseline Run | Separate explicit authorization after provider/model/pricing and call/token bounds are reviewed; smoke 4 cases once or all 17 cases twice |
 | Phase 8 | Lexical vs Dense Retrieval Baseline + Qdrant, if still justified | Same contracts/datasets/metrics; explicit embedding abstraction and justified provider/model; compare with lexical; no Hybrid/RRF initially |
 | Phase 9 | Lexical vs Dense error analysis + Hybrid/RRF adoption decision | Adopt fusion only if measured complementary failures and gains justify it |
 | Phase 10 | Reranking evaluation, if justified | Compare against retained simpler retrieval baselines |
@@ -118,7 +119,9 @@ Phase 7A connects bounded evidence assembly, trusted namespace context, the expl
 integration dataset passed twice; real-model quality remains unmeasured. Full results and
 limits are in `evaluation/knowledge-agent/measured-results.md`.
 
-STOP after Phase 7A. Do not begin Phase 7B, MCP, or Dense retrieval in this delivery. The
-next stage, if authorized, is Phase 7B — Budgeted Live Agent Task Evaluation + Minimal Agent
-Tracing. This measures whether real-model behavior uses evidence correctly before any
-retrieval quality expansion is considered.
+Phase 7B0 is complete: offline live-agent harness, deterministic graders, minimal run-local
+privacy-safe tracing, and provider/budget preflight. No real model request or spend was made.
+The next stage, if separately authorized, is Phase 7B1 — Authorized Live Model Baseline Run.
+Do not begin that baseline, MCP, or Dense retrieval without its separate gate. The baseline
+will measure whether model behavior uses tools and evidence correctly before any retrieval
+quality expansion is considered.

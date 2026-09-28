@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import ConfigDict, Field
 
 from app.agents.errors import AgentConfigurationError
+from app.agents.tracing import AgentTraceEvent, AgentTraceRecorder, AgentTraceSummary
 from app.llm.models import Contract, Identifier, Message, ToolCall
 from app.tools.models import ToolExecutionContext, ToolExecutionPolicy
 
@@ -25,6 +26,13 @@ class AgentLimits(Contract):
         return 2 * self.max_model_turns + 2
 
 
+class AgentModelPolicy(Contract):
+    """Trusted generation settings fixed when an evaluation runtime is constructed."""
+
+    temperature: float | None = Field(default=None, ge=0, le=2, allow_inf_nan=False)
+    max_output_tokens: int = Field(default=512, ge=1, le=32768, strict=True)
+
+
 @dataclass(frozen=True, kw_only=True)
 class AgentRunContext:
     """Trusted identity, knowledge scope and write policy supplied to Runtime.context."""
@@ -33,6 +41,7 @@ class AgentRunContext:
     tool_policy: ToolExecutionPolicy = field(default_factory=ToolExecutionPolicy)
     request_id: UUID | None = None
     knowledge_namespace: str | None = None
+    trace_recorder: AgentTraceRecorder | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         """Validate and snapshot trusted policy using the existing tool contract."""
@@ -75,6 +84,8 @@ class AgentRunResult(Contract):
     failed_tool_count: int
     duration_ms: float = Field(ge=0, allow_inf_nan=False)
     stop_reason: AgentStopReason = AgentStopReason.COMPLETED
+    trace_events: tuple[AgentTraceEvent, ...] = Field(default=(), repr=False)
+    trace_summary: AgentTraceSummary | None = Field(default=None, repr=False)
 
 
 class AgentState(TypedDict):

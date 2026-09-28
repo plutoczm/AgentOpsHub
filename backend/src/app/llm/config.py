@@ -36,6 +36,7 @@ class ModelPricing(Contract):
     output_per_million: Decimal = Field(ge=0, allow_inf_nan=False)
     currency: str = Field(pattern=r"^[A-Z]{3}$")
     effective_date: date | None = None
+    source: str | None = Field(default=None, max_length=256, pattern=r"^[A-Za-z0-9_./:-]+$")
 
 
 class ProviderProfile(Contract):
@@ -94,6 +95,10 @@ class ProviderProfile(Contract):
         """Named vendor presets retain required authentication; absence fails on invocation."""
         if self.kind in {"deepseek", "qwen"} and not self.api_key_required:
             raise ValueError("Named cloud profiles require API-key authentication")
+        if self.api_key is not None:
+            secret = self.api_key.get_secret_value()
+            if any(secret in value for value in (self.name, self.default_model, self.base_url)):
+                raise ValueError("API key must not overlap provider identifiers or endpoint")
         return self
 
 
@@ -117,4 +122,28 @@ class GatewayConfig(Contract):
         """Avoid ambiguous profile aliases without probing or requiring keys at startup."""
         if any(key != profile.name for key, profile in self.profiles.items()):
             raise ValueError("Each profile map key must equal its profile name")
+        public_metadata = [
+            value
+            for profile in self.profiles.values()
+            for value in (profile.name, profile.default_model, profile.base_url)
+        ]
+        public_metadata.extend(
+            pricing.source
+            for profile in self.profiles.values()
+            for pricing in profile.pricing.values()
+            if pricing.source is not None
+        )
+        for route_name, route in self.routes.items():
+            public_metadata.append(route_name)
+            for target in route.candidates:
+                public_metadata.append(target.provider)
+                if target.model is not None:
+                    public_metadata.append(target.model)
+        secrets = [
+            profile.api_key.get_secret_value()
+            for profile in self.profiles.values()
+            if profile.api_key is not None
+        ]
+        if any(secret in value for secret in secrets for value in public_metadata):
+            raise ValueError("API key must not overlap route or model identifiers")
         return self

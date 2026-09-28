@@ -55,6 +55,7 @@ class Capabilities(Contract):
     """Declared features; compatibility alone does not imply support."""
 
     tool_calling: bool = False
+    temperature: bool = True
     json_mode: bool = False
     structured_output: bool = False
 

@@ -209,6 +209,7 @@ def main() -> int:
             "test-integration",
             "eval-retrieval",
             "eval-knowledge-agent",
+            "eval-agent-live",
             "db-upgrade",
             "db-current",
             "serve",
@@ -227,6 +228,14 @@ def main() -> int:
             "infra-down",
         ],
     )
+    eval_modes = parser.add_mutually_exclusive_group()
+    eval_modes.add_argument(
+        "--preflight", action="store_const", const="preflight", dest="eval_mode"
+    )
+    eval_modes.add_argument("--offline", action="store_const", const="offline", dest="eval_mode")
+    eval_modes.add_argument("--smoke", action="store_const", const="smoke", dest="eval_mode")
+    eval_modes.add_argument("--measured", action="store_const", const="measured", dest="eval_mode")
+    parser.add_argument("--route", default="agent-eval")
     args = parser.parse_args()
     os.chdir(ROOT)
     commands = {
@@ -247,6 +256,17 @@ def main() -> int:
                     sys.executable,
                     str(ROOT / "scripts/test_postgres.py"),
                     "--eval-knowledge-agent",
+                ]
+            )
+        elif args.command == "eval-agent-live":
+            eval_mode = args.eval_mode or "preflight"
+            run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts/eval_agent_live.py"),
+                    f"--{eval_mode}",
+                    "--route",
+                    args.route,
                 ]
             )
         elif args.command == "test-integration":

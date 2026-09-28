@@ -540,10 +540,45 @@ integration-correctness evidence only. Real-model tool selection, answer quality
 prompt-injection robustness remain unmeasured. See
 `evaluation/knowledge-agent/measured-results.md`.
 
+### Phase 7B0 live-agent harness and trace
+
+The separate dataset at `evaluation/agent/phase7b-live-agent-v1.json` contains 17 synthetic
+cases covering positive knowledge tasks, paraphrase and ordinary wording, no evidence,
+unsupported facts, tenant/namespace override attempts, malicious retrieved instructions,
+knowledge/system/ticket tool selection, denied writes, invalid arguments, unknown tools, and
+duplicate calls. It does not modify either retrieval dataset.
+
+The deterministic grader reports task success, required/forbidden/unnecessary tool behavior,
+argument validity, tool failures and denials, expected-source retrieval and answer linkage,
+no-evidence refusal, unsupported claims, injection attempts/executions, scope violations,
+usage, latency, and configured-price cost estimates. It is not an LLM judge. Repeat stability
+compares outcomes, tool choices, argument-validation results, source selection, turns, calls,
+tokens, and latency; final answer text is never stored or compared byte-for-byte.
+
+`AgentTraceRecorder` is passed per run, never retained on `AgentRuntime`. Its immutable ordered
+events are bounded by `max_model_turns * (1 + route_candidates * gateway_attempts) +
+2 * max_tool_calls + 1`, using the repository's maximum route (10) and retry (5) contracts.
+Events record model responses, safe gateway attempts, tool calls/results, and one terminal
+event. Payloads, prompts, messages, arguments, evidence, tenant UUIDs, API keys, authorization
+headers, and DB URLs are excluded. Unknown token counts/cost remain null; a failed unpriced
+attempt makes cost completeness false. Context fingerprint and retriever identity are extracted
+only from the known `knowledge_search` result fields.
+
+`python scripts/dev.py eval-agent-live --preflight` only inspects local configuration.
+`--offline` provisions a private temporary PostgreSQL database and exercises the real
+AgentRuntime/Gateway/OpenAI-compatible normalization path with `httpx2.MockTransport`.
+`--smoke` and `--measured` require `AGENTOPSHUB_EVAL_LIVE_LLM=true`, a resolved exact model,
+native tool calling, credentials when required, and source-backed dated cloud pricing. Smoke is 4 cases once;
+measured is 17 cases twice. Limits are 8 turns, 16 proposed calls, a 60-second agent deadline,
+and 512 output tokens per call. The suggested USD 10 observed-cost stop point is not a provider
+billing hard cap. Output goes only to ignored `.artifacts/phase7b-live-agent.json` and contains
+safe metadata. Phase 7B0 performed no remote model call, produced no live accuracy result, and
+made no provider spend; Phase 7B1 requires separate user authorization.
+
 ### Future boundaries and inherited debt
 
-Phase 7B is the next stage: budgeted live Agent task evaluation and minimal tracing. Dense
-embeddings/Qdrant can be considered later with the same retrieval contract and a measured
+Phase 7B0 is implemented; Phase 7B1 is the next stage after explicit live-run authorization.
+Dense embeddings/Qdrant can be considered later with the same retrieval contract and a measured
 Agent-task comparison. Hybrid/RRF, reranking, Memory, Skills, MCP, Agent Harness, grounding,
 public execution endpoints, and live-model answer-quality claims remain separately gated.
 

@@ -13,6 +13,8 @@ def validate_target(
         raise ConfigurationError()
     if request.tools and not capabilities.tool_calling:
         raise UnsupportedCapabilityError()
+    if request.temperature is not None and not capabilities.temperature:
+        raise UnsupportedCapabilityError()
     if request.json_mode and request.structured_schema is None and not capabilities.json_mode:
         raise UnsupportedCapabilityError()
     if request.structured_schema is not None and not (

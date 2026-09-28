@@ -1,5 +1,12 @@
 """Safe orchestration errors; no framework or business payloads in messages."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.agents.tracing import AgentTraceEvent, AgentTraceSummary
+
 
 class AgentError(Exception):
     """Base failure for an incomplete run."""
@@ -10,6 +17,17 @@ class AgentError(Exception):
     def __init__(self) -> None:
         """Expose a fixed application-owned message only."""
         super().__init__(self.safe_message)
+        self.trace_events: tuple[AgentTraceEvent, ...] = ()
+        self.trace_summary: AgentTraceSummary | None = None
+
+    def attach_trace(
+        self,
+        events: tuple[AgentTraceEvent, ...],
+        summary: AgentTraceSummary,
+    ) -> None:
+        """Attach only a typed safe trace owned by this failed run."""
+        self.trace_events = events
+        self.trace_summary = summary
 
 
 class AgentConfigurationError(AgentError):

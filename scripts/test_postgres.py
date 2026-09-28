@@ -149,9 +149,17 @@ def main(*, benchmark: str | None = None) -> int:
             evaluation_script = {
                 "retrieval": "scripts/eval_retrieval.py",
                 "knowledge-agent": "scripts/eval_knowledge_agent.py",
+                "agent-offline": "scripts/eval_agent_live.py",
+                "agent-live-smoke": "scripts/eval_agent_live.py",
+                "agent-live-measured": "scripts/eval_agent_live.py",
             }[benchmark]
+            evaluation_args = {
+                "agent-offline": ["--run-offline"],
+                "agent-live-smoke": ["--run-live-smoke"],
+                "agent-live-measured": ["--run-live-measured"],
+            }.get(benchmark, [])
             return subprocess.run(
-                [sys.executable, str(ROOT / evaluation_script)],
+                [sys.executable, str(ROOT / evaluation_script), *evaluation_args],
                 cwd=ROOT,
                 env=env,
                 check=False,
@@ -200,6 +208,21 @@ if __name__ == "__main__":
         "--eval-knowledge-agent",
         action="store_const",
         const="knowledge-agent",
+        dest="benchmark",
+    )
+    group.add_argument(
+        "--eval-agent-offline", action="store_const", const="agent-offline", dest="benchmark"
+    )
+    group.add_argument(
+        "--eval-agent-live-smoke",
+        action="store_const",
+        const="agent-live-smoke",
+        dest="benchmark",
+    )
+    group.add_argument(
+        "--eval-agent-live-measured",
+        action="store_const",
+        const="agent-live-measured",
         dest="benchmark",
     )
     raise SystemExit(main(benchmark=parser.parse_args().benchmark))

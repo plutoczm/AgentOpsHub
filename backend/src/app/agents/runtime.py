@@ -22,11 +22,14 @@ from app.agents.errors import (
 )
 from app.agents.models import (
     AgentLimits,
+    AgentModelPolicy,
     AgentRunContext,
     AgentRunRequest,
     AgentRunResult,
     AgentState,
 )
+from app.agents.tracing import AgentTraceRecorder
+from app.llm.errors import LLMError
 from app.llm.models import LLMRequest, Message, Role, ToolCall
 from app.llm.protocols import Gateway
 from app.tools.executor import ToolExecutor
@@ -91,6 +94,7 @@ class AgentRuntime:
         executor: ToolExecutor,
         *,
         limits: AgentLimits | None = None,
+        model_policy: AgentModelPolicy | None = None,
     ) -> None:
         """Reuse lifecycle-owned dependencies without allocating provider resources."""
         if executor.registry is not registry:
@@ -100,6 +104,9 @@ class AgentRuntime:
         self._executor = executor
         try:
             self.limits = AgentLimits.model_validate((limits or AgentLimits()).model_dump())
+            self.model_policy = AgentModelPolicy.model_validate(
+                (model_policy or AgentModelPolicy()).model_dump()
+            )
         except ValueError:
             raise AgentConfigurationError() from None
         builder = StateGraph(AgentState, context_schema=AgentRunContext)
@@ -112,7 +119,13 @@ class AgentRuntime:
         builder.add_edge("execute_tools", "model_turn")
         self._graph = builder.compile(name="agentopshub_agent")
 
-    async def run(self, request: AgentRunRequest, context: AgentRunContext) -> AgentRunResult:
+    async def run(
+        self,
+        request: AgentRunRequest,
+        context: AgentRunContext,
+        *,
+        trace: AgentTraceRecorder | None = None,
+    ) -> AgentRunResult:
         """Run once within an overall deadline; external cancellation propagates unchanged."""
         started = perf_counter()
         metadata: dict[str, object] = {}
@@ -126,6 +139,7 @@ class AgentRuntime:
                 tool_policy=context.tool_policy,
                 request_id=context.request_id,
                 knowledge_namespace=context.knowledge_namespace,
+                trace_recorder=trace,
             )
             if context.request_id is not None:
                 metadata["request_id"] = str(context.request_id)
@@ -159,6 +173,15 @@ class AgentRuntime:
             final = state["messages"][-1]
             if state["pending_tool_calls"] or final.role is not Role.ASSISTANT or final.tool_calls:
                 raise AgentProtocolError()
+            trace_summary = (
+                trace.finalize(
+                    status="complete",
+                    error_category=None,
+                    model_turn_count=state["model_turn_count"],
+                )
+                if trace
+                else None
+            )
             result = AgentRunResult(
                 final_message=final,
                 messages=state["messages"],
@@ -168,25 +191,35 @@ class AgentRuntime:
                 successful_tool_count=state["successful_tool_count"],
                 failed_tool_count=state["failed_tool_count"],
                 duration_ms=(perf_counter() - started) * 1000,
+                trace_events=trace.events if trace else (),
+                trace_summary=trace_summary,
             )
         except asyncio.CancelledError:
             logger.info("agent_error", extra={**metadata, "agent_error": "cancelled"})
+            if trace is not None:
+                trace.finalize(status="error", error_category="cancelled")
             raise
         except TimeoutError:
             error: AgentError = (
                 AgentDeadlineExceededError() if deadline.expired() else AgentRuntimeError()
             )
             logger.info("agent_error", extra={**metadata, "agent_error": error.category})
+            self._attach_trace(trace, error)
             raise error from None
         except GraphRecursionError:
             logger.info("agent_error", extra={**metadata, "agent_error": "recursion"})
-            raise AgentRuntimeError() from None
+            error = AgentRuntimeError()
+            self._attach_trace(trace, error)
+            raise error from None
         except AgentError as exc:
             logger.info("agent_error", extra={**metadata, "agent_error": exc.category})
+            self._attach_trace(trace, exc)
             raise
         except Exception:
             logger.info("agent_error", extra={**metadata, "agent_error": "runtime"})
-            raise AgentRuntimeError() from None
+            error = AgentRuntimeError()
+            self._attach_trace(trace, error)
+            raise error from None
         logger.info(
             "agent_finish",
             extra={
@@ -200,6 +233,12 @@ class AgentRuntime:
             },
         )
         return result
+
+    @staticmethod
+    def _attach_trace(trace: AgentTraceRecorder | None, error: AgentError) -> None:
+        if trace is not None:
+            summary = trace.finalize(status="error", error_category=error.category)
+            error.attach_trace(trace.events, summary)
 
     async def _model_turn(
         self,
@@ -215,6 +254,8 @@ class AgentRuntime:
             route=state["route"],
             tools=self._registry.llm_definitions(),
             request_id=runtime.context.request_id,
+            temperature=self.model_policy.temperature,
+            max_output_tokens=self.model_policy.max_output_tokens,
         )
         turns = state["model_turn_count"] + 1
         logger.info(
@@ -228,9 +269,29 @@ class AgentRuntime:
         )
         try:
             response = await self._gateway.generate(request)
+        except LLMError as exc:
+            if runtime.context.trace_recorder is not None:
+                runtime.context.trace_recorder.record_attempts(
+                    exc.attempts,
+                    turn_number=turns,
+                )
+            # Gateway owns retries and fallback. Never include even unexpected exception text.
+            raise AgentModelError() from None
         except Exception:
             # Gateway owns retries and fallback. Never include even unexpected exception text.
             raise AgentModelError() from None
+        if runtime.context.trace_recorder is not None:
+            runtime.context.trace_recorder.record_response(
+                turns,
+                response,
+                tool_calls_proposed=len(response.message.tool_calls),
+            )
+            for call in response.message.tool_calls:
+                try:
+                    effect = self._registry.lookup(call.name).effect
+                except Exception:
+                    effect = None
+                runtime.context.trace_recorder.record_tool_call(name=call.name, effect=effect)
         message = response.message
         if message.role is not Role.ASSISTANT:
             raise AgentProtocolError()
@@ -282,13 +343,32 @@ class AgentRuntime:
             },
         )
         for call in calls:
+            try:
+                tool_effect = self._registry.lookup(call.name).effect
+            except Exception:
+                tool_effect = None
+            trace = runtime.context.trace_recorder
             if call.id in executed:
                 messages.append(duplicate_message(call))
+                if trace is not None:
+                    trace.record_duplicate_tool_result(name=call.name, effect=tool_effect)
                 continue
             # Dispatch (including executor validation/policy failures) consumes the ID.
             executed.add(call.id)
             executions += 1
-            result = await self._executor.execute(call, context)
+            tool_started = perf_counter() if trace is not None else 0.0
+            try:
+                result = await self._executor.execute(call, context)
+            except Exception:
+                if trace is not None:
+                    trace.record_unexpected_tool_failure(
+                        name=call.name,
+                        effect=tool_effect,
+                        duration_ms=max(0, (perf_counter() - tool_started) * 1000),
+                    )
+                raise
+            if trace is not None:
+                trace.record_tool_result(result, effect=tool_effect)
             messages.append(tool_message(result, call))
             successes += int(result.success)
             failures += int(not result.success)
