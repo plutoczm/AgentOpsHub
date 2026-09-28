@@ -9,7 +9,9 @@ from app.agents.models import AgentLimits, AgentModelPolicy
 from app.agents.tracing import AgentTraceSummary
 from app.evaluation.live_agent import (
     AgentCaseObservation,
+    AgentEvaluationArtifact,
     FailureCategory,
+    LiveBatchControlSummary,
     LiveCaseOutcome,
     PreflightStatus,
     ProviderPreflight,
@@ -20,6 +22,7 @@ from app.evaluation.live_agent import (
     load_live_agent_dataset,
     stable_json_hash,
 )
+from app.evaluation.live_agent_runner import _build_artifact
 from app.llm.config import GatewayConfig, ModelPricing, ProviderProfile, RetryPolicy, Route
 from app.llm.models import Capabilities, DeploymentType, ModelTarget
 
@@ -120,7 +123,7 @@ def test_preflight_computes_call_and_output_token_bounds_without_key_output() ->
     assert report.maximum_batch_runtime_seconds == 4 * 45
     assert report.input_token_upper_bound_known is False
     assert report.projected_cost_upper_bound is None
-    assert report.suggested_observed_cost_stop_usd == Decimal("10.00")
+    assert report.observed_cost_stop_threshold_usd == Decimal("10.00")
     assert "SECRET_API_KEY_MARKER" not in report.model_dump_json()
 
 
@@ -240,3 +243,60 @@ def test_deterministic_metrics_and_repeat_stability_use_safe_fields_only() -> No
     assert stability.tool_choice_stability == 0
     assert stability.observed_tokens_variation == 0
     assert "final" not in repr(stability).casefold()
+
+
+def test_aborted_live_artifact_preserves_only_safe_partial_control_state() -> None:
+    dataset = load_live_agent_dataset(Path.cwd())
+    observation = _observation(1, success=False, tools=())
+    control = LiveBatchControlSummary(
+        run_status="aborted",
+        abort_reason="provider_failure",
+        fatal_category="model",
+        provider_failure_categories=("authentication",),
+        currency="USD",
+        cost_limit=Decimal("10.00"),
+        observed_known_cost=Decimal("0"),
+        cost_observable=True,
+        cost_complete=False,
+        threshold_reached=False,
+        provider_generate_calls=1,
+        provider_attempts=1,
+        blocked_generate_calls=0,
+        cases_started=1,
+        cases_completed=1,
+    )
+    artifact = _build_artifact(
+        mode="LIVE_BASELINE",
+        dataset=dataset,
+        cases=(observation,),
+        traces=(),
+        corpus_hash="a" * 64,
+        tool_schema=(),
+        limits=AgentLimits(),
+        policy=AgentModelPolicy(temperature=0),
+        gateway_config=GatewayConfig(),
+        profile_name="deepseek",
+        model="deepseek-flash",
+        deployment=DeploymentType.CLOUD,
+        thinking_mode="disabled",
+        non_thinking_mode=True,
+        pricing_source="https://api-docs.deepseek.com/quick_start/pricing",
+        pricing_date=date(2026, 9, 10),
+        live_batch_control=control,
+    )
+
+    assert isinstance(artifact, AgentEvaluationArtifact)
+    assert artifact.schema_version == "1.1.0"
+    assert artifact.run_status == "aborted"
+    assert artifact.abort_reason == "provider_failure"
+    assert artifact.live_batch_control == control
+    serialized = artifact.model_dump_json()
+    for marker in (
+        "SECRET_QUERY_MARKER",
+        "SECRET_EVIDENCE_MARKER",
+        "SECRET_ASSISTANT_MARKER",
+        "SECRET_ARGUMENT_MARKER",
+        "SECRET_TENANT_MARKER",
+        "SECRET_API_KEY_MARKER",
+    ):
+        assert marker not in serialized

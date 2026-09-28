@@ -37,6 +37,7 @@ from app.evaluation.live_agent import (
     FailureCategory,
     LiveAgentCase,
     LiveAgentDataset,
+    LiveBatchControlSummary,
     LiveCaseOutcome,
     PreflightStatus,
     ProviderPreflight,
@@ -46,6 +47,11 @@ from app.evaluation.live_agent import (
     dataset_fingerprint,
     load_live_agent_dataset,
     stable_json_hash,
+)
+from app.evaluation.live_control import (
+    LiveBatchControl,
+    ObservedCostGateway,
+    run_controlled_cases,
 )
 from app.knowledge.context import KnowledgeContextPolicy
 from app.knowledge.models import DocumentInput, KnowledgeIngestionContext
@@ -288,9 +294,16 @@ async def run_live_evaluation(
         else dataset.cases
     )
     repetitions = 1 if mode == "smoke" else 2
+    if preflight.currency != "USD":
+        raise RuntimeError("Live evaluation cost currency must be USD")
+    batch_control = LiveBatchControl(
+        currency=preflight.currency,
+        limit=preflight.observed_cost_stop_threshold_usd,
+    )
     active_settings = isolated_evaluation_settings(load_dotenv=True)
     database = Database(active_settings)
     gateway = LLMGateway(settings.llm)
+    evaluation_gateway = ObservedCostGateway(gateway, batch_control)
     limits = AgentLimits()
     selected_route = settings.llm.routes[route_name]
     temperature_supported = True
@@ -315,29 +328,35 @@ async def run_live_evaluation(
         tenants = await _seed_corpus(database, root, dataset)
         registry = build_tool_registry(database)
         runtime = AgentRuntime(
-            gateway,
+            evaluation_gateway,
             registry,
             ToolExecutor(registry),
             limits=limits,
             model_policy=policy,
         )
-        executions: list[_CaseExecution] = []
         corpus_scope = {doc.source_key: (doc.tenant_ref, doc.namespace) for doc in dataset.corpus}
-        for repetition in range(1, repetitions + 1):
-            for case in selected:
-                executions.append(
-                    await _execute_case(
-                        runtime=runtime,
-                        limits=limits,
-                        case=case,
-                        tenant_id=tenants[case.tenant_ref],
-                        recorder_run_id=uuid4(),
-                        repetition_index=repetition,
-                        route_name=route_name,
-                        sensitive_values=sensitive_values,
-                        corpus_scope=corpus_scope,
-                    )
-                )
+
+        async def execute_case(case: LiveAgentCase, repetition_index: int) -> _CaseExecution:
+            return await _execute_case(
+                runtime=runtime,
+                limits=limits,
+                case=case,
+                tenant_id=tenants[case.tenant_ref],
+                recorder_run_id=uuid4(),
+                repetition_index=repetition_index,
+                route_name=route_name,
+                sensitive_values=sensitive_values,
+                corpus_scope=corpus_scope,
+                batch_control=batch_control,
+            )
+
+        executions = await run_controlled_cases(
+            selected,
+            repetitions=repetitions,
+            control=batch_control,
+            execute_case=execute_case,
+        )
+        batch_summary = batch_control.to_summary()
         candidate = settings.llm.routes[route_name].candidates[0]
         profile = settings.llm.profiles[candidate.provider]
         exact_model = candidate.model or profile.default_model
@@ -368,6 +387,7 @@ async def run_live_evaluation(
             pricing_source=pricing.source if pricing is not None else None,
             pricing_date=pricing.effective_date if pricing is not None else None,
             preflight=preflight,
+            live_batch_control=batch_summary,
         )
         _write_artifact(root, artifact)
         return artifact
@@ -387,6 +407,7 @@ async def _execute_case(
     route_name: str,
     sensitive_values: tuple[str, ...],
     corpus_scope: dict[str, tuple[str, str]],
+    batch_control: LiveBatchControl | None = None,
 ) -> _CaseExecution:
     request_id = uuid4()
     recorder = AgentTraceRecorder.for_limits(
@@ -402,6 +423,9 @@ async def _execute_case(
     retrieved_sources: set[str] = set()
     evidence_seen = False
     observed_error: str | None = None
+    blocked_generates_before = (
+        batch_control.blocked_generate_calls if batch_control is not None else 0
+    )
     try:
         result = await runtime.run(
             AgentRunRequest(user_message=case.user_task, route=route_name),
@@ -420,6 +444,13 @@ async def _execute_case(
         retrieved_sources = set(source_set)
     except AgentError as exc:
         observed_error = exc.category
+        if (
+            batch_control is not None
+            and batch_control.blocked_generate_calls > blocked_generates_before
+            and batch_control.abort_reason
+            in {"cost_threshold_reached", "cost_observability_lost", "cost_currency_mismatch"}
+        ):
+            observed_error = "budget"
         trace_events = exc.trace_events
         trace_summary = exc.trace_summary
     if trace_summary is None:
@@ -844,6 +875,7 @@ def _build_artifact(
     pricing_source: str | None,
     pricing_date: date | None,
     preflight: ProviderPreflight | None = None,
+    live_batch_control: LiveBatchControlSummary | None = None,
 ) -> AgentEvaluationArtifact:
     git_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     dirty = bool(
@@ -881,6 +913,9 @@ def _build_artifact(
     )
     return AgentEvaluationArtifact(
         mode=mode,  # type: ignore[arg-type]
+        run_status=live_batch_control.run_status if live_batch_control else "complete",
+        abort_reason=live_batch_control.abort_reason if live_batch_control else None,
+        live_batch_control=live_batch_control,
         manifest=manifest,
         preflight=preflight,
         metrics=aggregate_metrics(cases),

@@ -44,8 +44,27 @@ agent deadline, 2 attempts per candidate, and 512 output tokens per provider cal
 theoretical provider-call ceiling is cases × repetitions × turns × route candidates × retries;
 maximum generated output is that ceiling × output tokens per call. Input tokens do not have a
 known upper bound. Sequential smoke/measured wall-time ceilings are 4 and 34 agent deadlines
-respectively (240 seconds and 2,040 seconds at the default 60-second deadline). A suggested
-USD 10 observed-cost stop threshold is not a hard billing cap.
+respectively (240 seconds and 2,040 seconds at the default 60-second deadline). The live runner
+enforces a USD 10 observed configured-price stop threshold. A
+run-local Gateway decorator checks the governor before every model turn and adds each successful
+response's existing `CostEstimate`. Once the cumulative observed estimate reaches or exceeds USD
+10, the current response may finish its Agent turn, but no later provider generation is delegated.
+An estimate is not a provider billing hard cap: the response that crosses the threshold may have
+arrived from a request whose dynamically sized input tokens were not known in advance. If a
+response has no `CostEstimate` or its currency differs from the run budget, cost observability is
+lost and future generations are blocked; `None` is never treated as zero.
+Run summaries keep `cost_observable` separate from `cost_complete`: a bounded retry that later
+succeeds can continue with its returned estimate, while the summary still marks cost completeness
+false when the attempt history contains a failure.
+
+Terminal configuration, model/provider, protocol, runtime, deadline, and Agent-budget errors
+abort the live batch after the current case is summarized. Successful bounded retries do not
+abort. Deterministic quality failures and safely denied tool actions remain case observations and
+do not by themselves abort. Tenant/namespace violations, unauthorized writes, and trusted-context
+overrides abort before another case starts. Aborted runs preserve a sanitized partial artifact
+with run status, abort reason, case counts, safe traces, and observed-cost accounting.
+Artifact schema 1.1.0 adds the optional live batch-control summary; offline runs remain
+`HARNESS_VALIDATION` with a complete run status.
 
 ## Grading and trace rules
 

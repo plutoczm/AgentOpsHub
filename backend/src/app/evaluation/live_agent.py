@@ -183,7 +183,7 @@ class ProviderPreflight(Contract):
     input_token_upper_bound_known: bool = False
     output_side_cost_upper_bound: Decimal | None = None
     projected_cost_upper_bound: Decimal | None = None
-    suggested_observed_cost_stop_usd: Decimal = Decimal("10.00")
+    observed_cost_stop_threshold_usd: Decimal = Decimal("10.00")
     currency: str | None = None
     issues: tuple[str, ...] = ()
 
@@ -564,6 +564,45 @@ def aggregate_stability(
     )
 
 
+class LiveBatchControlSummary(Contract):
+    """Safe run-local budget and abort accounting for one live evaluation batch."""
+
+    run_status: Literal["complete", "aborted"]
+    abort_reason: (
+        Literal[
+            "cost_threshold_reached",
+            "cost_observability_lost",
+            "cost_currency_mismatch",
+            "provider_failure",
+            "fatal_agent_error",
+            "security_invariant",
+        ]
+        | None
+    )
+    fatal_category: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]*$")
+    provider_failure_categories: tuple[str, ...] = ()
+    currency: str = Field(pattern=r"^[A-Z]{3}$")
+    cost_limit: Decimal = Field(gt=0, allow_inf_nan=False)
+    observed_known_cost: Decimal = Field(ge=0, allow_inf_nan=False)
+    cost_observable: bool
+    cost_complete: bool
+    threshold_reached: bool
+    provider_generate_calls: int = Field(ge=0)
+    provider_attempts: int = Field(ge=0)
+    blocked_generate_calls: int = Field(ge=0)
+    cases_started: int = Field(ge=0)
+    cases_completed: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def consistent_run_state(self) -> Self:
+        """Keep partial-run status and case accounting internally consistent."""
+        if self.cases_completed > self.cases_started:
+            raise ValueError("Completed live cases cannot exceed started cases")
+        if (self.run_status == "aborted") != (self.abort_reason is not None):
+            raise ValueError("Aborted live runs require exactly one safe abort reason")
+        return self
+
+
 class AgentEvaluationManifest(Contract):
     """Reproducibility metadata without raw prompts, URLs, credentials, or tenant UUIDs."""
 
@@ -596,14 +635,29 @@ class AgentEvaluationManifest(Contract):
 class AgentEvaluationArtifact(Contract):
     """Ignored local JSON report containing only manifest, metrics and safe traces."""
 
-    schema_version: str = "1.0.0"
+    schema_version: str = "1.1.0"
     mode: Literal["HARNESS_VALIDATION", "LIVE_BASELINE"]
+    run_status: Literal["complete", "aborted"] = "complete"
+    abort_reason: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]*$")
+    live_batch_control: LiveBatchControlSummary | None = None
     manifest: AgentEvaluationManifest
     preflight: ProviderPreflight | None = None
     metrics: AgentEvaluationMetrics
     stability: AgentStabilityMetrics | None = None
     cases: tuple[AgentCaseObservation, ...]
     traces: tuple[AgentTraceEvent, ...]
+
+    @model_validator(mode="after")
+    def consistent_batch_status(self) -> Self:
+        """Make aborted partial artifacts explicit without changing offline semantics."""
+        if (self.run_status == "aborted") != (self.abort_reason is not None):
+            raise ValueError("Aborted artifacts require exactly one safe abort reason")
+        if self.live_batch_control is not None and (
+            self.live_batch_control.run_status != self.run_status
+            or self.live_batch_control.abort_reason != self.abort_reason
+        ):
+            raise ValueError("Artifact and live-batch status must agree")
+        return self
 
 
 def stable_json_hash(value: object) -> str:
