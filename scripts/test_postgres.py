@@ -44,7 +44,7 @@ def manual_http_probe(env: dict[str, str], compose: list[str]) -> None:
             env=env,
             stdout=output,
             stderr=subprocess.STDOUT,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            creationflags=int(getattr(subprocess, "CREATE_NO_WINDOW", 0)) if os.name == "nt" else 0,
         )
 
         def get(path: str) -> tuple[int, object]:
