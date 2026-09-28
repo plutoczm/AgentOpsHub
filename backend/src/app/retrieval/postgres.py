@@ -67,8 +67,6 @@ class PostgresFTSRetriever:
             raise InvalidSearchRequestError() from None
         metadata = {
             "request_id": str(context.request_id) if context.request_id else None,
-            "retrieval_namespace": context.namespace,
-            "retrieval_top_k": request.top_k,
             "retriever": self.name,
         }
         logger.info("knowledge_search_start", extra=metadata)

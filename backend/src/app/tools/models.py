@@ -44,10 +44,16 @@ class ToolExecutionPolicy(ToolModel):
 
 
 class ToolExecutionContext(ToolModel):
-    """Required trusted tenant identity, never deserialized from tool arguments."""
+    """Trusted tenant identity and optional server-selected knowledge namespace."""
 
     tenant_id: UUID
     request_id: UUID | None = None
+    knowledge_namespace: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z][a-z0-9_-]*$",
+    )
     policy: ToolExecutionPolicy = Field(default_factory=ToolExecutionPolicy)
 
 

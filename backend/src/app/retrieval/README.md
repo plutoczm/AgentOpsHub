@@ -39,5 +39,6 @@ Phase 5 metadata/config-only UNCHANGED semantics remain; explicit reindex/rebuil
 metadata-version operations are future work.
 
 See evaluation/retrieval/README.md for the frozen synthetic benchmark, metrics and
-actual limitations. No public endpoint, knowledge_search tool, Agent/LLM call,
-embedding, Qdrant business retrieval, Dense, Hybrid/RRF or reranker is implemented.
+actual limitations. Phase 7A integrates this retriever behind an internal query-only
+`knowledge_search` tool; this module itself adds no Agent policy or public endpoint.
+No embedding, Qdrant business retrieval, Dense, Hybrid/RRF or reranker is implemented.

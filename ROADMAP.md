@@ -1,7 +1,7 @@
 # AgentOpsHub Roadmap
 
 每阶段独立验收、小步提交。本文为计划，不将未来能力描述为已完成。
-Phase 0-5 accepted. Phase 6 Retrieval Evaluation Foundation + Deterministic Lexical Baseline is implemented and locally validated. Phase 7 has not started.
+Phase 0-6 accepted. Phase 7A Bounded Context Engineering + Knowledge Agent Loop is implemented and locally validated. Phase 7B has not started.
 
 | 阶段 | 目标 | 可验证的退出条件 |
 | --- | --- | --- |
@@ -12,10 +12,11 @@ Phase 0-5 accepted. Phase 6 Retrieval Evaluation Foundation + Deterministic Lexi
 | Phase 4 complete | Bounded LangGraph 1.2 Agent Runtime | Trusted Runtime context, Gateway/Executor, budgets/deadline, duplicate-ID protection, offline and real PG tests |
 | Phase 5 complete | Deterministic Knowledge Ingestion & Reference Scenario Foundation | Trusted tenant/namespace, UTF-8 parsing/chunking, immutable revisions, idempotency, provenance, real PostgreSQL isolation/concurrency and synthetic scenario corpora |
 | Phase 6 complete | Retrieval Evaluation Foundation + Deterministic Lexical Baseline | PostgreSQL FTS, trusted/latest-only SQL, fixed 16-document/48-query synthetic benchmark, reproducible metrics and observed failure analysis |
-| Phase 7 | Dense Retrieval Baseline + Qdrant | Same contracts/datasets/metrics; explicit embedding abstraction and justified provider/model; compare with lexical; no Hybrid/RRF initially |
-| Phase 8 | Lexical vs Dense error analysis + Hybrid/RRF adoption decision | Adopt fusion only if measured complementary failures and gains justify it |
-| Phase 9 | Reranking evaluation, if justified | Compare against retained simpler retrieval baselines |
-| Phase 10 | Context Engineering | Only after measured retrieval baselines; bounded context/provenance |
+| Phase 7A complete | Bounded Context Engineering + Knowledge Agent Loop | Trusted runtime namespace, query-only READ_ONLY tool, bounded provenance-preserving evidence, real PostgreSQL and deterministic Agent integration evaluation |
+| Phase 7B next | Budgeted Live Agent Task Evaluation + Minimal Agent Tracing | Explicit live-model budget, task outcome rubric, privacy-safe minimal tracing; separate model quality from scripted integration correctness |
+| Phase 8 | Lexical vs Dense Retrieval Baseline + Qdrant, if still justified | Same contracts/datasets/metrics; explicit embedding abstraction and justified provider/model; compare with lexical; no Hybrid/RRF initially |
+| Phase 9 | Lexical vs Dense error analysis + Hybrid/RRF adoption decision | Adopt fusion only if measured complementary failures and gains justify it |
+| Phase 10 | Reranking evaluation, if justified | Compare against retained simpler retrieval baselines |
 | Phase 11 | Memory | Explicit authorization, retention and deletion |
 | Phase 12 | Agent Skills | Reviewed instruction/tool composition |
 | Phase 13 | MCP | Preserve trusted context and tool authorization |
@@ -49,7 +50,7 @@ Phase 4 必须保留默认拒绝写策略；审批/幂等完成前不可自动�
 
 Phase 2 已实现自有模型协议与 OpenAI-compatible gateway 的 transport mock 测试，
 已验证 timeout/retry/fallback 和 usage/cost unknown 语义；真实 provider 验证仍需后续显式预算。
-不在 Phase 2 同时堆叠 LangGraph、RAG 或 MCP。Phase 2 已按上述边界实现 Gateway；Agent/LangGraph now compose it in Phase 4; RAG remains unimplemented.
+不在 Phase 2 同时堆叠 LangGraph、RAG 或 MCP。Phase 2 已按上述边界实现 Gateway；Agent/LangGraph now compose it in Phase 4; Phase 7A later added internal knowledge retrieval; live-model quality remains unmeasured.
 
 ## 实验与提交规则
 
@@ -99,7 +100,7 @@ deterministic chunking. Retain simpler implementations until controlled experime
 justify extra cost and failure modes.
 
 
-## Phase 6 completion and stopping point
+## Phase 6 completion
 
 PostgreSQL FTS lexical retrieval and a deterministic source-level evaluator are implemented.
 This is not BM25, Dense, Hybrid RAG or answer generation. The fixed synthetic benchmark
@@ -107,7 +108,17 @@ exposes paraphrase misses (0/4 per scenario), ordinary wording misses (2/4 per s
 acronym and chunk-boundary limitations. Actual tables and caveats are in
 evaluation/retrieval/measured-results.md; quality evidence is in progress.md.
 
-STOP after Phase 6. Do not begin Phase 7 in this delivery. Next scope is a Dense baseline
-with separately justified embeddings/Qdrant, reusing the exact retrieval contract,
-datasets and metric implementation. Compare category-level gains and operational costs;
-do not assume Dense is necessary or superior. No Hybrid/RRF until later evidence supports it.
+Phase 6 is retained as the lexical baseline. Its paraphrase and ordinary-wording failures
+make Dense worth comparing, but do not establish that it improves Agent task outcomes.
+
+## Phase 7A completion and stopping point
+
+Phase 7A connects bounded evidence assembly, trusted namespace context, the explicit
+`knowledge_search` tool, PostgreSQL FTS and the existing AgentRuntime. The deterministic
+integration dataset passed twice; real-model quality remains unmeasured. Full results and
+limits are in `evaluation/knowledge-agent/measured-results.md`.
+
+STOP after Phase 7A. Do not begin Phase 7B, MCP, or Dense retrieval in this delivery. The
+next stage, if authorized, is Phase 7B — Budgeted Live Agent Task Evaluation + Minimal Agent
+Tracing. This measures whether real-model behavior uses evidence correctly before any
+retrieval quality expansion is considered.

@@ -27,21 +27,26 @@ class AgentLimits(Contract):
 
 @dataclass(frozen=True, kw_only=True)
 class AgentRunContext:
-    """Trusted identity and write policy; supplied separately to Runtime.context."""
+    """Trusted identity, knowledge scope and write policy supplied to Runtime.context."""
 
     tenant_id: UUID
     tool_policy: ToolExecutionPolicy = field(default_factory=ToolExecutionPolicy)
     request_id: UUID | None = None
+    knowledge_namespace: str | None = None
 
     def __post_init__(self) -> None:
         """Validate and snapshot trusted policy using the existing tool contract."""
         try:
             validated = ToolExecutionContext(
-                tenant_id=self.tenant_id, request_id=self.request_id, policy=self.tool_policy
+                tenant_id=self.tenant_id,
+                request_id=self.request_id,
+                knowledge_namespace=self.knowledge_namespace,
+                policy=self.tool_policy,
             )
         except ValueError:
             raise AgentConfigurationError() from None
         object.__setattr__(self, "tool_policy", validated.policy)
+        object.__setattr__(self, "knowledge_namespace", validated.knowledge_namespace)
 
 
 class AgentRunRequest(Contract):

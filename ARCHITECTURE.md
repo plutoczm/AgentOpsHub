@@ -4,7 +4,7 @@ Evaluation-driven enterprise Agent runtime/orchestration platform; SupportOps an
 
 ## 1. 状态与边界
 
-当前实现范围为 **Phase 0–6：Bootstrap、Conda/Persistence、内部 LLM Gateway、Tool Runtime、Bounded Agent Runtime、Deterministic Knowledge Ingestion、Lexical Retrieval/Evaluation**。本文区分现有实现与目标设计；
+当前实现范围为 **Phase 0–7A：Bootstrap、Persistence、内部 LLM Gateway、Tool Runtime、Bounded Agent Runtime、Knowledge Ingestion、Lexical Retrieval/Evaluation、Bounded Knowledge Context/Agent Loop**。本文区分现有实现与目标设计；
 设计中的模块、表、接口和保障不代表已实现。项目是 production-oriented 原型，
 已实现 Tenant/Ticket 持久化，已实现内部有界 Agent；尚不具备认证或生产部署能力。
 
@@ -35,7 +35,7 @@ flowchart TD
     Repos --> PG[(PostgreSQL)]
     Services --> Redis[(Redis)]
     RAG --> Qdrant[(Qdrant)]
-    RAG --> Lexical[BM25 索引]
+    RAG --> Lexical[PostgreSQL FTS]
     MCP[MCP adapters] --> Policy
     Eval[独立 evaluation package] --> RAG
     Eval --> Graph
@@ -123,7 +123,7 @@ Redis/Qdrant 不参与应用 readiness。SELECT 1 不代表 schema 已迁移，�
 测试容器，验证 /ready 503 与 /health 200。finally 清理仅由本次创建的资源。
 运行原始结果保存在忽略的 .artifacts；progress.md 记录真实摘要，不将测试耗时作为性能结论。
 
-Phase 1 之后新增的 Gateway 见第 7 节；RAG、MCP、认证、frontend、Redis/Qdrant 业务逻辑仍未实现。
+Phase 1 之后新增的 Gateway 见第 7 节；Phase 7A 已接入内部 knowledge retrieval/context loop。MCP、认证、frontend、Redis/Qdrant 业务逻辑仍未实现。
 
 ## 4. Bounded LangGraph 1.2 Agent Runtime (implemented)
 
@@ -210,14 +210,15 @@ No checkpointer, Store, InMemorySaver, persistent memory, interrupts, resume, HI
 LangGraph Server or external observability is configured. Related transitive packages do
 not imply enabled features.
 
-Future integration points (not implementations):
+Future integration points and remaining boundaries:
 
-- ContextEngine may prepare normalized messages before model_turn.
+- Phase 7A `KnowledgeContextAssembler` packs bounded retrieved evidence. A generic multi-source
+  ContextEngine may later prepare other normalized messages before model_turn.
 - Memory Manager may supply authorized context through a future explicit history boundary.
 - Agent Skills may contribute reviewed instructions/tools through composition.
 - MCP adapters may register typed tools while preserving Executor authorization.
 - OpenTelemetry may consume safe run/turn/tool metadata in its own future phase.
-- RAG, reflection, multi-agent, A2A, AG-UI, public API and local models remain unimplemented.
+- Live-model knowledge quality, reflection, multi-agent, A2A, AG-UI, public API and local models remain unimplemented or unmeasured.
 
 Offline tests script Gateway and execute actual compiled StateGraph. Full-path integration
 retains real Executor, TicketService, TicketRepository and isolated PostgreSQL. SQLAlchemy
@@ -323,9 +324,10 @@ request_id_context；不覆盖/污染调用方 contextvar。不记录 tenant ID�
 
 Phase 4 LangGraph 只应调用 gateway 和 executor，不从 graph node 访问 repository；应限制步数、
 总时长和工具调用数，保持 trusted context，传播取消，消费分类结果并禁止自动重放 WRITE。
-RAG 层存在后才将 knowledge_search 作为新的 READ_ONLY 工具显式注册，ACL 在检索服务内执行。
+Phase 7A 已显式注册 READ_ONLY `knowledge_search`，复用 Tool/ToolRegistry/ToolExecutor 和
+KnowledgeRetriever。租户与 namespace 从 trusted runtime context 传入，PostgreSQL 在 SQL 内授权隔离。
 未来 MCP adapter 只做协议/认证上下文转换并复用 runtime/policy，不能绕过写策略或导入任意工具。
-RAG/knowledge_search、MCP、raw SQL 工具、认证、HITL UI 和持久化 tracing 均未实现。
+MCP、raw SQL 工具、认证、HITL UI 和持久化 tracing 均未实现。
 raw SQL 需要单独设计解析、租户约束、只读角色、表/语句白名单、期限/行数与审计，不在本阶段注册。
 
 ## 6. Deterministic knowledge ingestion and lexical retrieval (implemented)
@@ -451,8 +453,9 @@ chunk index, section path, content/hash, normalized character bounds, finite sco
 one-based rank. RetrievalResult validates contiguous ranks, namespace and duplicate IDs.
 Output body fields are excluded from repr and logs. Request/backend/invariant errors
 carry fixed messages; raw SQL exceptions, query and chunk text are not logged.
-Only fixed events, trusted correlation/namespace, retriever, top-K, count and monotonic
-perf_counter duration enter the existing JSON whitelist.
+Only fixed events, request ID, retriever identity, result count and monotonic perf_counter
+duration enter retrieval logs. Raw query, evidence content/title, tenant UUID, namespace,
+and top-K values are not logged.
 
 ### Retrieval evaluation contract and measured limits
 
@@ -496,14 +499,53 @@ are split between title and subsection. Six easy no-answer negatives all returne
 this does not validate enterprise answerability. These are measurable reasons to evaluate
 Dense, alongside simpler lexical/heading representation experiments, not proof it wins.
 
+### Phase 7A bounded Agent context and knowledge tool loop
+
+`AgentRunContext.knowledge_namespace` and `ToolExecutionContext.knowledge_namespace` are
+explicit typed, optional trusted fields. The application/runtime supplies them; request
+text, `AgentRunRequest`, tool arguments, documents, and the model cannot set them. A missing
+trusted namespace fails closed for `knowledge_search`. Existing tenant and default-deny
+write semantics remain unchanged.
+
+The built-in registry explicitly registers four tools. `knowledge_search` has a strict
+query-only input and `READ_ONLY` effect. At construction, `KnowledgeContextPolicy` defaults
+to retrieval_top_k=10, max_evidence_chunks=5, and max_total_evidence_chars=6000. The last
+value is a character count over the canonical serialized evidence list, not a token budget.
+The tool passes trusted tenant/namespace/request ID and the policy top_k to the existing
+`KnowledgeRetriever`; the application lifespan owns one `PostgresFTSRetriever` instance.
+Its Phase 6 FTS SQL, latest-revision predicate, score/order semantics, and benchmark labels
+are unchanged.
+
+`KnowledgeContextAssembler` packs whole `RetrievedChunk` values in rank order. It stops when
+the next chunk would exceed the evidence-count or serialized-character limit, preserves
+provenance, and reports selected/omitted counts. It does not reorder, truncate, rescore, or
+present score as confidence. If the first ranked chunk cannot fit, assembly raises a safe
+tool failure. The output includes source_key, title, section_path, chunk_index, rank,
+content_sha256, and content; persistence UUIDs are omitted. An explicit
+`evidence_trust=untrusted_evidence` contract and the small Agent system instruction state
+that document text is data, not policy, authority, or tool permission.
+
+Empty retrieval is a successful `no_evidence` result with an empty list. Backend and
+assembly errors remain failed safe tool outcomes. The canonical SHA-256 context fingerprint
+includes version, retriever, trusted tenant/namespace, policy, and selected rank/source/
+chunk/hash identities; it contains no timestamp. Tool and retriever logs omit raw query,
+document title/content, tenant UUID, namespace, and tool arguments.
+
+`python scripts/dev.py eval-knowledge-agent` creates a unique disposable PostgreSQL
+database, ingests the versioned synthetic corpus, and runs the real tool/retriever/Agent
+graph with a scripted Gateway. Ten cases passed twice with identical outcomes and context
+fingerprints, covering both namespaces, tenant isolation, no evidence, latest revision,
+malicious evidence plus write denial, budget pressure, and backend failure. This is
+integration-correctness evidence only. Real-model tool selection, answer quality, and
+prompt-injection robustness remain unmeasured. See
+`evaluation/knowledge-agent/measured-results.md`.
+
 ### Future boundaries and inherited debt
 
-Phase 7: separately justify an embedding abstraction/provider/model and Qdrant Dense
-baseline using the same contracts/data/metrics. Preserve lexical for direct comparison.
-Phase 8: analyze lexical versus Dense failures and decide whether Hybrid/RRF adds value.
-Reranking, Context Engineering, Memory, Skills, MCP, Agent Harness, grounding and tracing
-remain separately gated. No knowledge_search tool, Agent routing change, query rewriting,
-LLM-as-judge, public search endpoint or RAG answer generation is implemented.
+Phase 7B is the next stage: budgeted live Agent task evaluation and minimal tracing. Dense
+embeddings/Qdrant can be considered later with the same retrieval contract and a measured
+Agent-task comparison. Hybrid/RRF, reranking, Memory, Skills, MCP, Agent Harness, grounding,
+public execution endpoints, and live-model answer-quality claims remain separately gated.
 
 Phase 5 normalized-content hashing is unchanged: title/media/config-only edits remain
 UNCHANGED. Query result titles come from revision snapshots. A later parser/chunker

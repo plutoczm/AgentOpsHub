@@ -98,7 +98,7 @@ def manual_http_probe(env: dict[str, str], compose: list[str]) -> None:
     assert env["POSTGRES_PASSWORD"] not in logs
 
 
-def main(*, benchmark: bool = False) -> int:
+def main(*, benchmark: str | None = None) -> int:
     """Create run-owned resources; never accept an external database URL or reuse dev data."""
     run_id = uuid4().hex
     project = f"agentopshub-test-{run_id}"
@@ -135,7 +135,7 @@ def main(*, benchmark: bool = False) -> int:
         print(f"Test interpreter: {sys.executable}", flush=True)
         artifacts = ROOT / ".artifacts"
         artifacts.mkdir(exist_ok=True)
-        if benchmark:
+        if benchmark is not None:
             migrated = subprocess.run(
                 [sys.executable, "-m", "alembic", "upgrade", "head"],
                 cwd=ROOT,
@@ -146,8 +146,12 @@ def main(*, benchmark: bool = False) -> int:
             )
             if migrated.returncode:
                 raise RuntimeError("Benchmark migration failed")
+            evaluation_script = {
+                "retrieval": "scripts/eval_retrieval.py",
+                "knowledge-agent": "scripts/eval_knowledge_agent.py",
+            }[benchmark]
             return subprocess.run(
-                [sys.executable, str(ROOT / "scripts/eval_retrieval.py")],
+                [sys.executable, str(ROOT / evaluation_script)],
                 cwd=ROOT,
                 env=env,
                 check=False,
@@ -188,5 +192,14 @@ def main(*, benchmark: bool = False) -> int:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--eval-retrieval", action="store_true")
-    raise SystemExit(main(benchmark=parser.parse_args().eval_retrieval))
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--eval-retrieval", action="store_const", const="retrieval", dest="benchmark"
+    )
+    group.add_argument(
+        "--eval-knowledge-agent",
+        action="store_const",
+        const="knowledge-agent",
+        dest="benchmark",
+    )
+    raise SystemExit(main(benchmark=parser.parse_args().benchmark))

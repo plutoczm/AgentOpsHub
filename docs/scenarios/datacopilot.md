@@ -35,7 +35,8 @@ cover both namespaces. Each scenario has 8 synthetic documents and 24 fixed labe
 queries, with source-level metrics and category errors recorded in
 ../../evaluation/retrieval/measured-results.md.
 
-The implementation is PostgreSQL FTS with trusted tenant/namespace and current-revision
-SQL predicates. It performs no Agent invocation, knowledge_search tool dispatch or answer
-generation. Shared schema, retrieval/benchmark semantics and business datasets do not
-mean the independent repositories are remotely connected.
+The Phase 6 benchmark uses PostgreSQL FTS with trusted tenant/namespace and current-revision
+SQL predicates; that evaluator itself makes no Agent invocation. Phase 7A separately wires
+the generic internal `knowledge_search` Agent tool to the same retriever. Shared schema,
+retrieval/benchmark semantics and business datasets do not mean the independent
+repositories are remotely connected.

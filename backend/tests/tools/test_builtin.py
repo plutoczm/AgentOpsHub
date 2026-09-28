@@ -72,6 +72,7 @@ async def test_builtin_input_rejection_before_database(
 def test_schemas_have_no_context_and_enums_are_json_compatible() -> None:
     registry = build_tool_registry(Database(Settings(_env_file=None)))
     assert [t.name for t in registry.list_tools()] == [
+        "knowledge_search",
         "system_status",
         "ticket_create",
         "ticket_search",
@@ -83,6 +84,10 @@ def test_schemas_have_no_context_and_enums_are_json_compatible() -> None:
     search = registry.lookup("ticket_search")
     assert search.validate_input({"status": "open", "ticket_id": str(uuid4())})
     assert registry.lookup("ticket_create").validate_input({"title": "x", "priority": "high"})
+    knowledge = registry.lookup("knowledge_search")
+    assert knowledge.validate_input({"query": "return window"})
+    properties = knowledge.llm_definition().parameters["properties"]
+    assert isinstance(properties, dict) and set(properties) == {"query"}
     with pytest.raises(ToolInputValidationError):
         search.validate_input({"tenant_id": str(uuid4())})
 
@@ -91,7 +96,11 @@ def test_schemas_have_no_context_and_enums_are_json_compatible() -> None:
 async def test_unconfigured_services_normalize_without_secret_output() -> None:
     runtime = ToolExecutor(build_tool_registry(Database(Settings(_env_file=None))))
     context = ToolExecutionContext(tenant_id=uuid4(), policy=ToolExecutionPolicy(allow_writes=True))
-    for name, arguments in [("ticket_search", {}), ("ticket_create", {"title": "x"})]:
+    for name, arguments in [
+        ("ticket_search", {}),
+        ("ticket_create", {"title": "x"}),
+        ("knowledge_search", {"query": "safe test"}),
+    ]:
         result = await runtime.execute(
             ToolCall.model_validate({"id": "x", "name": name, "arguments": arguments}), context
         )
@@ -105,7 +114,7 @@ def test_lifespan_composes_internal_runtime_without_http_endpoint() -> None:
     app = create_app(Settings(_env_file=None))
     with TestClient(app) as client:
         assert isinstance(app.state.tool_executor, ToolExecutor)
-        assert len(app.state.tool_registry.llm_definitions()) == 3
+        assert len(app.state.tool_registry.llm_definitions()) == 4
         assert client.get("/health").status_code == 200
         assert client.get("/ready").status_code == 503
         assert client.post("/tools/execute", json={}).status_code == 404

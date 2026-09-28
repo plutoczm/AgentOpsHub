@@ -19,6 +19,10 @@ DocumentInput forbids tenant/namespace, IDs, revision numbers and timestamps.
 Callers read explicitly selected local files themselves; this service never opens
 paths, fetches URLs, runs SQL, evaluates Markdown or invokes models/tools.
 
+Phase 7A's separate `KnowledgeContextAssembler` consumes retrieval results; it does not
+change ingestion or revision semantics. Its bounded evidence and Agent integration are
+described in the root [Phase 7A section](../../../../README.md#bounded-knowledge-context-and-agent-loop-phase-7a).
+
 Pipeline: byte limit -> strict UTF-8/BOM -> conservative newline normalization ->
 ATX heading/fence scanner -> normalized SHA-256 -> locked version check -> deterministic
 character chunks -> provenance -> atomic PostgreSQL transaction.

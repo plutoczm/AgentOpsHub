@@ -208,6 +208,7 @@ def main() -> int:
             "lock",
             "test-integration",
             "eval-retrieval",
+            "eval-knowledge-agent",
             "db-upgrade",
             "db-current",
             "serve",
@@ -240,6 +241,14 @@ def main() -> int:
     try:
         if args.command == "eval-retrieval":
             run([sys.executable, str(ROOT / "scripts/test_postgres.py"), "--eval-retrieval"])
+        elif args.command == "eval-knowledge-agent":
+            run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts/test_postgres.py"),
+                    "--eval-knowledge-agent",
+                ]
+            )
         elif args.command == "test-integration":
             run([sys.executable, str(ROOT / "scripts/test_postgres.py")])
         elif args.command == "lock":

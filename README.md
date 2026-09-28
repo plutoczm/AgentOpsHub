@@ -2,10 +2,11 @@
 
 Evaluation-driven enterprise Agent runtime/orchestration platform, with SupportOps and DataCopilot reference scenarios.
 
-**已实现：Phase 0–6（后端基础、持久化、内部 LLM Gateway、Typed Tenant-Safe Tool Runtime、Bounded LangGraph Agent Runtime、Deterministic Knowledge Ingestion、Retrieval Evaluation Foundation + PostgreSQL FTS Lexical Baseline）。**
-当前包含 FastAPI、配置/日志、PostgreSQL Tenant/Ticket、Alembic、内部 LLM Gateway、三个类型化工具、有界 LangGraph 执行循环，以及离线模型/工具测试和真实数据库测试。
-尚无业务 CRUD HTTP 接口、认证、公开 Agent API、RAG、MCP、前端、本地推理运行时或持久化 LLM tracing。
-Redis/Qdrant 仍是基础设施预留，运行时仅使用 PostgreSQL。已有明确标注的 synthetic retrieval benchmark；没有生产质量或生产性能声明。
+**Implemented through Phase 7A:** tenant-safe typed tools, bounded LangGraph runtime, deterministic knowledge ingestion, PostgreSQL FTS retrieval, bounded evidence context, and an internal knowledge-search Agent loop.
+Models propose; trusted application context and deterministic executors validate, authorize, and perform work.
+There is no business CRUD HTTP API, authentication, public Agent endpoint, frontend, MCP, live-model evaluation, or persistent Agent tracing.
+PostgreSQL FTS remains the lexical baseline. Redis and Qdrant are not used by the knowledge Agent path.
+
 
 ## Workflow First and reference scenarios
 
@@ -25,9 +26,9 @@ AgentOpsHub
      +-- Schema / SQL / Analysis
 ```
 
-**Implemented through Phase 6:** shared architecture contracts, deterministic ingestion,
-trusted lexical retrieval and common evaluation semantics; 16 synthetic benchmark documents
-and 48 labeled queries across the two reference scenarios.
+**Implemented through Phase 7A:** shared architecture contracts, deterministic ingestion,
+trusted lexical retrieval, bounded evidence context, and an internal knowledge-search Agent
+loop; the frozen Phase 6 benchmark has 16 synthetic documents and 48 labeled queries.
 **Planned:** remote domain-agent integration and MCP/A2A/AG-UI boundaries.
 The three repositories remain independent; no full source copy, repository merge,
 Git submodule or remote protocol integration was introduced.
@@ -69,10 +70,11 @@ Knowledge Ingestion -> PostgreSQL Knowledge Corpus
 ```
 
 `PostgresFTSRetriever` implements the shared `KnowledgeRetriever` protocol.
-`KnowledgeRetrievalContext` supplies trusted tenant/namespace; the request contains
-only query and top_k. SQL enforces tenant, namespace and latest revision before limiting
-results. Query text is bound, never interpolated. No public search endpoint or
-knowledge_search Agent tool is registered.
+`KnowledgeRetrievalContext` supplies trusted tenant/namespace; the retriever request
+contains query and top_k. SQL enforces tenant, namespace and latest revision before
+limiting results. Query text is bound, never interpolated. Phase 7A registers an internal
+`knowledge_search` tool whose input contains only query; the tool derives top_k from its
+trusted construction-time context policy. No public search or Agent endpoint is exposed.
 
 This is **PostgreSQL Full-Text Search**, not BM25. Explicit `pg_catalog.simple`,
 `plainto_tsquery` AND matching, `ts_rank_cd(..., 0)`, and a GIN expression index form
@@ -98,11 +100,51 @@ No-answer accuracy was 3/3 each on six easy negatives, not a production answerab
 The baseline lacks stemming, synonym expansion and strong Chinese segmentation.
 AND terms split across chunks can miss even an exact policy query.
 
-Dense/Qdrant remain Phase 7 candidates; Hybrid/RRF, reranking and generation are deferred.
-No embedding API, model download, Agent/LLM invocation or cross-repository runtime
-integration was added. Phase 5 content hashes/history/config-only UNCHANGED semantics
-remain intact; reindex/rebuild and metadata-only versioning need explicit future decisions.
+Dense/Qdrant are not adopted. Hybrid/RRF, reranking and real-model evaluation remain
+deferred. Phase 6's retriever and benchmark are unchanged; its evaluator still has no Agent
+or LLM calls. Phase 5 content hashes/history/config-only UNCHANGED semantics remain intact;
+reindex/rebuild and metadata-only versioning need explicit future decisions.
 Current Alembic head: `20260909_02`; previous migrations are unchanged.
+
+## Bounded knowledge context and Agent loop (Phase 7A)
+
+The application now composes:
+
+```text
+AgentRuntime -> knowledge_search -> KnowledgeRetriever -> PostgreSQL FTS
+             -> bounded untrusted evidence -> Tool message -> next model turn
+```
+
+`AgentRunContext.knowledge_namespace` is a typed trusted runtime field. `ToolExecutionContext`
+passes that scope, the trusted tenant, and request ID to `knowledge_search`; neither
+`AgentRunRequest` nor model arguments can set tenant or namespace. The typed tool accepts
+only `query`, has `READ_ONLY` effect, and uses the existing registry, executor, retriever
+protocol, and default-deny write policy. The built-in registry now explicitly contains four
+tools: `system_status`, `ticket_search`, `ticket_create`, and `knowledge_search`.
+
+`KnowledgeContextPolicy` defaults to retrieval top 10, at most 5 evidence chunks, and a
+6,000-character cap over the canonical serialized evidence list. It counts characters, not
+tokens. Chunks are packed whole in retrieval rank order; if rank 1 cannot fit, assembly
+returns a safe tool failure, and if a later chunk cannot fit, packing stops and reports the
+omitted count. Evidence preserves source key, title, section path, chunk index, rank,
+content hash, and text. UUIDs and backend scores are not exposed. Tool output labels text as
+`untrusted_evidence`; document text is never promoted to system instructions or permission.
+
+Empty retrieval is `no_evidence` with a successful empty result. PostgreSQL/retriever and
+context assembly failures remain distinct safe tool errors. A deterministic SHA-256 context
+fingerprint covers the version, retriever, trusted tenant/namespace, policy, and selected
+evidence identities and hashes. Logs omit query and evidence text.
+
+```text
+python scripts/dev.py eval-knowledge-agent
+```
+
+This command uses an isolated disposable PostgreSQL database and a scripted Gateway through
+the real AgentRuntime/tool/retriever path. The 10-case dataset passed twice with stable
+outcomes and fingerprints. It demonstrates integration correctness, not live-model tool
+selection, answer quality, or prompt-injection robustness. See [dataset](evaluation/knowledge-agent/README.md),
+[measured results](evaluation/knowledge-agent/measured-results.md), and
+[decision 0003](docs/decisions/0003-bounded-agent-context.md).
 
 ## 本地 Windows 推荐环境：Conda + uv
 
@@ -353,7 +395,7 @@ LLM 测试阻止默认网络 transport，使用 MockTransport 经过真实序列
 全套验收保留真实 PostgreSQL 回归；无需模型 key、互联网模型服务、GPU 或本地模型服务器。
 
 没有安装 CUDA/ML 框架或下载权重。Local endpoint 支持不等于本地运行时管理；
-Gateway is composed by Phase 4 AgentRuntime. RAG, MCP, embedding and persistent tracing remain unimplemented.
+No CUDA/ML runtime or model weights are installed. Phase 7A adds an internal bounded knowledge context/tool loop; MCP, embeddings, and persistent tracing remain unimplemented.
 
 ## 内部 Tool Runtime（Phase 3）
 
@@ -377,6 +419,7 @@ allow_writes、数据库 ID 和时间戳等非声明字段。严格 JSON 校验�
 | system_status | READ_ONLY | 空对象 | application=ok；postgresql=ok/unavailable |
 | ticket_search | READ_ONLY | status 可选；limit 默认 20、范围 1–100；ticket_id 可选 | 当前租户的有界工单摘要 |
 | ticket_create | WRITE | title 1–300 字符且非空白；description 最多 10000；priority 默认 medium | 新工单摘要 |
+| knowledge_search | READ_ONLY | query；scope 与预算来自 trusted context/policy | bounded ranked untrusted evidence |
 
 工单摘要仅含 id/title/status/priority，不包含 description 或 tenant_id。搜索按既有仓储的
 created_at/id 顺序返回；精确 ID 查询同样带 tenant 条件，并同时应用 status 条件。
@@ -403,8 +446,9 @@ Executor never retries. Phase 4 Agent suppresses same-run ID replay; new IDs can
 策略拒绝、实际提交、flush 后异常/超时/取消回滚、提交失败和日志安全。
 详情和实际命令结果见 [progress.md](progress.md)。
 
-尚未实现 RAG/knowledge_search、MCP、raw SQL 工具、认证、持久化工具 tracing、
-HITL UI 或 HTTP 工具执行接口。当前只有显式注册的三个工具，无动态插件加载或任意代码执行。
+尚未实现 MCP、raw SQL 工具、认证、持久化工具 tracing、HITL UI 或 HTTP 工具执行接口。
+当前显式注册四个工具，无动态插件加载或任意代码执行。Phase 7A 的 scripted evaluation
+不测真实模型质量；Dense retrieval 也未采用。
 
 ## Bounded LangGraph Agent Runtime (Phase 4)
 
@@ -479,12 +523,15 @@ PostgreSQL tests retain real Executor, TicketService, TicketRepository and isola
 Run python -m pytest backend/tests/agents -q and python scripts/dev.py test-integration
 under the accepted Conda workflow. Exact results: [progress.md](progress.md).
 
-**Not implemented:** RAG, ContextEngine, Memory Manager, Skills, MCP, A2A, AG-UI, HITL,
+**Not implemented:** Memory Manager, Skills, MCP, A2A, AG-UI, HITL,
 persistent checkpointing, persistent Agent memory, public Agent API, multi-agent, reflection,
-authentication, frontend or local LLM runtime. Phase 6 provides internal lexical retrieval and a deterministic retrieval evaluator; it does not generate answers.
+authentication, frontend or local LLM runtime. Phase 6 provides lexical retrieval and a
+deterministic retrieval evaluator; Phase 7A adds a bounded internal knowledge tool loop but
+does not measure real-model answers.
 
 ## 设计与 License
 
 [ARCHITECTURE.md](ARCHITECTURE.md) 区分现有实现与未来设计；
-[ROADMAP.md](ROADMAP.md) 记录阶段状态。Phase 0–6 are implemented and locally validated. Phase 7 has not started.
+[ROADMAP.md](ROADMAP.md) 记录阶段状态。Phase 0–7A are implemented and locally validated;
+Phase 7B has not started.
 MIT，见 [LICENSE](LICENSE)。
