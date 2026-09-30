@@ -1,7 +1,7 @@
 # AgentOpsHub Roadmap
 
 每阶段独立验收、小步提交。本文为计划，不将未来能力描述为已完成。
-Phase 0-6 accepted. Phase 7A Bounded Context Engineering + Knowledge Agent Loop and Phase 7B0 evaluation harness/preflight are implemented and locally validated. No real model baseline has run.
+Phase 0-6 accepted. Phase 7A and the Phase 7B0 evaluation harness are implemented and locally validated. The Phase 7B1-D live measured baseline and Phase 7B1-E evidence freeze are complete; task quality is low and no production accuracy claim is made. See evaluation/agent/measured-results.md.
 
 | 阶段 | 目标 | 可验证的退出条件 |
 | --- | --- | --- |
@@ -13,18 +13,18 @@ Phase 0-6 accepted. Phase 7A Bounded Context Engineering + Knowledge Agent Loop 
 | Phase 5 complete | Deterministic Knowledge Ingestion & Reference Scenario Foundation | Trusted tenant/namespace, UTF-8 parsing/chunking, immutable revisions, idempotency, provenance, real PostgreSQL isolation/concurrency and synthetic scenario corpora |
 | Phase 6 complete | Retrieval Evaluation Foundation + Deterministic Lexical Baseline | PostgreSQL FTS, trusted/latest-only SQL, fixed 16-document/48-query synthetic benchmark, reproducible metrics and observed failure analysis |
 | Phase 7A complete | Bounded Context Engineering + Knowledge Agent Loop | Trusted runtime namespace, query-only READ_ONLY tool, bounded provenance-preserving evidence, real PostgreSQL and deterministic Agent integration evaluation |
-| Phase 7B0 complete | Live Agent Evaluation Harness + Minimal Privacy-Safe Trace + Provider/Budget Preflight | Versioned 17-case dataset, deterministic graders, offline gateway/provider harness, bounded run-local metadata traces, no live model call |
-| Phase 7B1 next | Authorized Live Model Baseline Run | Separate explicit authorization after provider/model/pricing and call/token bounds are reviewed; smoke 4 cases once or all 17 cases twice |
-| Phase 8 | Lexical vs Dense Retrieval Baseline + Qdrant, if still justified | Same contracts/datasets/metrics; explicit embedding abstraction and justified provider/model; compare with lexical; no Hybrid/RRF initially |
-| Phase 9 | Lexical vs Dense error analysis + Hybrid/RRF adoption decision | Adopt fusion only if measured complementary failures and gains justify it |
+| Phase 7B0 complete | Live Agent Evaluation Harness + Minimal Privacy-Safe Trace + Provider/Budget Preflight | Versioned 17-case dataset, deterministic graders, offline provider harness, bounded metadata traces |
+| Phase 7B1 complete | Authorized Live Measured Baseline + Evidence Freeze | One authorized 17-case x 2 run, validity and privacy gates, sanitized report, failure attribution; task-quality results retained as measured |
+| Phase 7C proposed | Evidence-triggered Controlled Retrieval Upgrade Experiment | Offline lexical-vs-dense comparison on the existing Phase 6 corpus/query set at fixed top_k; Dense may lose; no implementation started |
+| Phase 8 planned | MCP Client -> SupportOps read-only capability | Preserve trusted context and tool authorization; separate authorization and integration gate; not started |
+| Phase 9 conditional | Lexical vs Dense error analysis + Hybrid/RRF decision | Consider fusion only after repeatable Dense gains and complementary errors are shown |
 | Phase 10 | Reranking evaluation, if justified | Compare against retained simpler retrieval baselines |
 | Phase 11 | Memory | Explicit authorization, retention and deletion |
 | Phase 12 | Agent Skills | Reviewed instruction/tool composition |
-| Phase 13 | MCP | Preserve trusted context and tool authorization |
-| Phase 14 | Agent Harness / AgentSpec | Reproducible specifications |
-| Phase 15 | Grounding / Hallucination Evaluation | Separate retrieval from generation quality |
-| Phase 16 | OpenTelemetry Agent Observability | Privacy-safe telemetry |
-| Phase 17 | Containment / HITL / Policy | Permission, approval and side-effect control |
+| Phase 13 | Agent Harness / AgentSpec | Reproducible specifications |
+| Phase 14 | Grounding / Hallucination Evaluation | Separate retrieval from generation quality |
+| Phase 15 | OpenTelemetry Agent Observability | Privacy-safe telemetry |
+| Phase 16 | Containment / HITL / Policy | Permission, approval and side-effect control |
 | Later | A2A with SupportOps/DataCopilot, AG-UI, Local Model Runtime | Independent adoption and deployment decisions |
 
 
@@ -115,13 +115,44 @@ make Dense worth comparing, but do not establish that it improves Agent task out
 ## Phase 7A completion and stopping point
 
 Phase 7A connects bounded evidence assembly, trusted namespace context, the explicit
-`knowledge_search` tool, PostgreSQL FTS and the existing AgentRuntime. The deterministic
-integration dataset passed twice; real-model quality remains unmeasured. Full results and
-limits are in `evaluation/knowledge-agent/measured-results.md`.
+knowledge_search tool, PostgreSQL FTS and the existing AgentRuntime. The deterministic
+integration dataset passed twice; details and limits are in
+evaluation/knowledge-agent/measured-results.md.
 
-Phase 7B0 is complete: offline live-agent harness, deterministic graders, minimal run-local
-privacy-safe tracing, and provider/budget preflight. No real model request or spend was made.
-The next stage, if separately authorized, is Phase 7B1 — Authorized Live Model Baseline Run.
-Do not begin that baseline, MCP, or Dense retrieval without its separate gate. The baseline
-will measure whether model behavior uses tools and evidence correctly before any retrieval
-quality expansion is considered.
+## Phase 7B1 completion and stopping point
+
+Phase 7B0 provides the offline live-agent harness, deterministic graders, minimal run-local
+privacy-safe tracing, and provider/budget preflight. Phase 7B1-D then completed one authorized
+17-case x 2 live measured run. Infrastructure, security, and measurement validity passed;
+4/34 task successes (11.76%) show low task quality. All provider attempts succeeded, while
+expected-source retrieval was 1/14 and refusal accuracy was 0/8. Exact figures, stability,
+category table, and sanitized observation attribution are in
+evaluation/agent/measured-results.md. The run is evidence, not a production accuracy claim.
+
+## Phase 7C - evidence-triggered controlled retrieval experiment (proposed, not started)
+
+Measured Phase 7B evidence and the separate Phase 6 lexical benchmark justify testing retrieval
+as the next variable. Phase 7C is a bounded insertion, not production adoption:
+
+- 7C-A: prepare one Dense candidate and a frozen offline comparison.
+- 7C-B: compare lexical and Dense on the existing Phase 6 corpus and 48-query set at the same
+  top_k=5.
+- 7C-C: only if offline gates pass, consider Agent-loop A/B on the frozen Phase 7B cases; any
+  later live model use requires separate authorization.
+- 7C-D: decide whether to retain lexical, adopt Dense, or justify a separate Hybrid experiment.
+
+Predeclared offline gate: combined HitRate@5 improves by at least 0.10 absolute over 0.642857143
+(at least five additional hits among 42 answerable queries); paraphrase HitRate@5 reaches at least
+2/8; Recall@5 is no lower than 0.619047619; no-answer remains 6/6; tenant, namespace, and latest
+revision guarantees remain unchanged. Record latency and cost. Keep the corpus, query set, and
+top_k identical; do not use a larger top_k to create apparent improvement. These are future
+acceptance criteria, not measured Dense results. Dense may lose; if any gate fails, keep lexical.
+
+Freeze the Agent system instruction, tool descriptions, dataset, grader, limits, provider/model,
+temperature, context budget, and lexical implementation for any later Agent-loop comparison.
+No prompt tuning, query rewrite, reranker, Hybrid, or other simultaneous retrieval change.
+
+## Phase 8 - MCP Client -> SupportOps read-only capability (planned, not started)
+
+The previous read-only MCP direction is preserved after the controlled retrieval experiment.
+Keep trusted tenant context and tool authorization. Phase 7C does not implement MCP or Dense.

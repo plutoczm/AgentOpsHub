@@ -4,7 +4,7 @@ Evaluation-driven enterprise Agent runtime/orchestration platform; SupportOps an
 
 ## 1. 状态与边界
 
-当前实现范围为 **Phase 0–7A：Bootstrap、Persistence、内部 LLM Gateway、Tool Runtime、Bounded Agent Runtime、Knowledge Ingestion、Lexical Retrieval/Evaluation、Bounded Knowledge Context/Agent Loop**。本文区分现有实现与目标设计；
+当前运行时代码实现范围为 **Phase 0–7B0**：Bootstrap、Persistence、内部 LLM Gateway、Tool Runtime、Bounded Agent Runtime、Knowledge Ingestion、Lexical Retrieval/Evaluation、Bounded Knowledge Context/Agent Loop 和离线 live-agent evaluation harness。Phase 7B1-D/E 是基线测量与证据冻结，不增加运行时能力；本文区分现有实现与目标设计；
 设计中的模块、表、接口和保障不代表已实现。项目是 production-oriented 原型，
 已实现 Tenant/Ticket 持久化，已实现内部有界 Agent；尚不具备认证或生产部署能力。
 
@@ -572,15 +572,20 @@ native tool calling, credentials when required, and source-backed dated cloud pr
 measured is 17 cases twice. Limits are 8 turns, 16 proposed calls, a 60-second agent deadline,
 and 512 output tokens per call. The suggested USD 10 observed-cost stop point is not a provider
 billing hard cap. Output goes only to ignored `.artifacts/phase7b-live-agent.json` and contains
-safe metadata. Phase 7B0 performed no remote model call, produced no live accuracy result, and
-made no provider spend; Phase 7B1 requires separate user authorization.
+safe metadata. The Phase 7B0 harness run itself made no remote model call or provider spend.
+The separate Phase 7B1-D measured run completed 34 tasks; the privacy-safe results and limits
+are in evaluation/agent/measured-results.md. Task quality was low, and this small synthetic
+sample is not a production accuracy or SLO claim. Future live runs remain separately authorized.
 
 ### Future boundaries and inherited debt
 
-Phase 7B0 is implemented; Phase 7B1 is the next stage after explicit live-run authorization.
-Dense embeddings/Qdrant can be considered later with the same retrieval contract and a measured
-Agent-task comparison. Hybrid/RRF, reranking, Memory, Skills, MCP, Agent Harness, grounding,
-public execution endpoints, and live-model answer-quality claims remain separately gated.
+Phase 7B1-D measured baseline and Phase 7B1-E evidence freeze/review are complete. An
+evidence-triggered Phase 7C controlled retrieval experiment is proposed, not started: compare
+lexical with one Dense candidate offline using the existing Phase 6 corpus/query set and fixed
+top_k; if Dense does not pass the frozen gates, retain FTS. Phase 8 remains the planned
+read-only MCP client for SupportOps, not implemented here. Hybrid/RRF, reranking, Memory,
+Skills, Agent Harness, grounding, public execution endpoints, and production-quality claims
+remain separately gated.
 
 Phase 5 normalized-content hashing is unchanged: title/media/config-only edits remain
 UNCHANGED. Query result titles come from revision snapshots. A later parser/chunker

@@ -4,7 +4,7 @@ Evaluation-driven enterprise Agent runtime/orchestration platform, with SupportO
 
 **Implemented through Phase 7B0:** tenant-safe typed tools, bounded LangGraph runtime, deterministic knowledge ingestion, PostgreSQL FTS retrieval, bounded evidence context, an internal knowledge-search Agent loop, and an offline-capable evaluation harness with run-local privacy-safe traces and provider/budget preflight.
 Models propose; trusted application context and deterministic executors validate, authorize, and perform work.
-There is no business CRUD HTTP API, authentication, public Agent endpoint, frontend, MCP, or live-model accuracy result. Phase 7B0 made no remote model call; traces are run-local and metadata-only.
+There is no business CRUD HTTP API, authentication, public Agent endpoint, frontend, or MCP implementation. Phase 7B0 itself made no remote model call; a separate 34-task Phase 7B1-D baseline is now recorded, without production-accuracy or SLO claims. Traces remain run-local and metadata-only.
 PostgreSQL FTS remains the lexical baseline. Redis and Qdrant are not used by the knowledge Agent path.
 
 
@@ -29,8 +29,8 @@ AgentOpsHub
 **Implemented through Phase 7B0:** shared architecture contracts, deterministic ingestion,
 trusted lexical retrieval, bounded evidence context, and an internal knowledge-search Agent
 loop; the frozen Phase 6 benchmark has 16 synthetic documents and 48 labeled queries. A
-separate 17-case Phase 7B dataset defines later live-agent measurements without claiming
-live-model quality.
+separate 17-case Phase 7B dataset produced the first authorized 34-task live baseline. Its
+quality was low; see the canonical report for measured results and limits.
 **Planned:** remote domain-agent integration and MCP/A2A/AG-UI boundaries.
 The three repositories remain independent; no full source copy, repository merge,
 Git submodule or remote protocol integration was introduced.
@@ -166,13 +166,21 @@ database and the existing `AgentRuntime -> LLMGateway -> OpenAICompatibleProvide
 `httpx2.MockTransport`; it is labeled `HARNESS_VALIDATION`, not a live model result. Generated
 metadata-only output is written to the ignored `.artifacts/phase7b-live-agent.json`.
 
-Future smoke or measured execution requires the exact environment opt-in
-`AGENTOPSHUB_EVAL_LIVE_LLM=true`, a configured route/provider with native tool calling, a
-present key when required, and cloud pricing with a configured source and effective date. Smoke covers 4 cases once; measured covers
-all 17 cases twice. Default limits are 8 model turns, 16 proposed tool calls, 60 seconds, and
-512 output tokens per call. The suggested USD 10 threshold is an observed-cost stop point,
-not a provider billing hard cap. No real model baseline exists yet; a separate Phase 7B1
-authorization is required before using either live mode.
+Every future smoke or measured execution still requires the exact process-local opt-in
+AGENTOPSHUB_EVAL_LIVE_LLM=true, a configured route/provider with native tool calling, a
+present key when required, and source-backed dated cloud pricing. Smoke covers 4 cases once;
+measured covers all 17 cases twice. Default limits are 8 model turns, 16 proposed tool calls,
+60 seconds, and 512 output tokens per call. The USD 10 threshold is an observed-cost stop,
+not a provider billing hard cap.
+
+The first live measured baseline completed 34 tasks: 4/34 task successes (11.76%), expected-source
+retrieval 1/14, and valid tool arguments 47/47. All 67 provider attempts succeeded. Tenant,
+namespace, and unauthorized-write execution counters were zero; two unsafe write attempts were
+blocked before execution. Configured-price estimated cost was USD 0.03165060, not an invoice.
+This small evaluation is not a production accuracy or SLO claim. See the
+[canonical measured report](evaluation/agent/measured-results.md). The results justify a
+controlled offline lexical-vs-dense experiment in Phase 7C; they do not establish Dense
+superiority. The planned Phase 8 read-only MCP capability remains unimplemented.
 
 Trace events contain run/request/case identifiers and allowlisted provider, model, attempt,
 tool, timing, usage/cost, context fingerprint, and retriever metadata. They never store prompts,
@@ -560,12 +568,14 @@ under the accepted Conda workflow. Exact results: [progress.md](progress.md).
 **Not implemented:** Memory Manager, Skills, MCP, A2A, AG-UI, HITL,
 persistent checkpointing, persistent Agent memory, public Agent API, multi-agent, reflection,
 authentication, frontend or local LLM runtime. Phase 6 provides lexical retrieval and a
-deterministic retrieval evaluator; Phase 7A adds a bounded internal knowledge tool loop but
-does not measure real-model answers.
+deterministic evaluator; Phase 7A adds a bounded knowledge tool loop. The separate Phase 7B1-D
+measured baseline is recorded in [evaluation/agent/measured-results.md](evaluation/agent/measured-results.md);
+it is a small task-quality sample, not a production claim.
 
 ## 设计与 License
 
 [ARCHITECTURE.md](ARCHITECTURE.md) 区分现有实现与未来设计；
-[ROADMAP.md](ROADMAP.md) 记录阶段状态。Phase 0–7A are implemented and locally validated;
-Phase 7B has not started.
+[ROADMAP.md](ROADMAP.md) 记录阶段状态。Runtime code is implemented through Phase 7B0;
+Phase 7B1-D measured evaluation and 7B1-E evidence review are complete. Phase 7C is documented
+but not started.
 MIT，见 [LICENSE](LICENSE)。
